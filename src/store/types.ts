@@ -49,4 +49,5 @@ export interface PhotoMeta {
   thumbPath: string;
   width: number;
   height: number;
+  heicPaths: string[]; // non-empty if any imported files are HEIC
 }

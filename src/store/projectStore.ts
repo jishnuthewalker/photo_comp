@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create, useStore } from "zustand";
 import { temporal } from "zundo";
 import { nanoid } from "nanoid";
 import type { Project, Photo, AudioFile, OutputConfig, AspectRatio, Alignment, Transition } from "./types";
@@ -94,3 +94,6 @@ export const useProjectStore = create<ProjectState>()(
     }
   )
 );
+
+export const useTemporalStore = <T>(selector: (state: ReturnType<typeof useProjectStore.temporal.getState>) => T) =>
+  useStore(useProjectStore.temporal, selector);
