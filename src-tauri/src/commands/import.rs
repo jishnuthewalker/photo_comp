@@ -26,6 +26,10 @@ pub async fn import_images(
     paths: Vec<String>,
     thumb_size: u32,
 ) -> Result<ImportResult, String> {
+    if thumb_size == 0 {
+        return Err("thumb_size must be > 0".into());
+    }
+
     let thumb_dir = app
         .path()
         .app_cache_dir()

@@ -14,7 +14,8 @@ pub fn convert_heic_files(
 ) -> Vec<(String, String)> {
     heic_paths.iter().filter_map(|p| {
         let stem = p.file_stem()?.to_string_lossy().into_owned();
-        let out = output_dir.join(format!("{stem}.jpg"));
+        let hash = path_hash(p);
+        let out = output_dir.join(format!("{stem}_{hash:x}.jpg"));
 
         #[cfg(windows)]
         let status = {
@@ -41,4 +42,15 @@ pub fn convert_heic_files(
             None
         }
     }).collect()
+}
+
+fn path_hash(path: &Path) -> u64 {
+    // FNV-1a: deterministic, stable across restarts and Rust versions
+    let bytes = path.to_string_lossy();
+    let mut hash: u64 = 14695981039346656037;
+    for byte in bytes.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    hash
 }

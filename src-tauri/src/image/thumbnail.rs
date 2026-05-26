@@ -45,9 +45,12 @@ fn generate_one(path: &Path, thumb_size: u32, thumb_dir: &Path) -> anyhow::Resul
 }
 
 fn hash_of_path(path: &Path) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    path.hash(&mut h);
-    h.finish()
+    // FNV-1a: deterministic, stable across restarts and Rust versions
+    let bytes = path.to_string_lossy();
+    let mut hash: u64 = 14695981039346656037;
+    for byte in bytes.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    hash
 }
