@@ -1,6 +1,7 @@
 import { create, useStore } from "zustand";
 import { temporal } from "zundo";
 import { nanoid } from "nanoid";
+import equal from "fast-deep-equal";
 import type { Project, Photo, AudioFile, OutputConfig, AspectRatio, Alignment, Transition } from "./types";
 
 function defaultProject(): Project {
@@ -54,6 +55,7 @@ export const useProjectStore = create<ProjectState>()(
       reorderPhotos: (fromIndex, toIndex) =>
         set((s) => {
           const photos = [...s.project.photos];
+          if (fromIndex < 0 || toIndex < 0 || fromIndex >= photos.length || toIndex >= photos.length) return s;
           const [moved] = photos.splice(fromIndex, 1);
           photos.splice(toIndex, 0, moved);
           return { project: touch({ ...s.project, photos }) };
@@ -64,7 +66,16 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({
           project: touch({
             ...s.project,
-            photos: s.project.photos.map((p) => (p.id === id ? { ...p, beatsOverride: beats } : p)),
+            photos: s.project.photos.map((p) => {
+              if (p.id !== id) return p;
+              const updated = { ...p };
+              if (beats === undefined) {
+                delete updated.beatsOverride;
+              } else {
+                updated.beatsOverride = beats;
+              }
+              return updated;
+            }),
           }),
         })),
       setBpm: (bpm) => set((s) => ({ project: touch({ ...s.project, bpm }) })),
@@ -80,7 +91,11 @@ export const useProjectStore = create<ProjectState>()(
       setOutputConfig: (outputConfig) =>
         set((s) => ({ project: touch({ ...s.project, outputConfig }) })),
       setName: (name) => set((s) => ({ project: touch({ ...s.project, name }) })),
-      loadProject: (project) => set({ project }),
+      loadProject: (project) => {
+        set({ project });
+        // clear undo history so user can't undo back to previous project
+        setTimeout(() => useProjectStore.temporal.getState().clear(), 0);
+      },
     }),
     {
       // Track undo for meaningful state changes only
@@ -89,7 +104,7 @@ export const useProjectStore = create<ProjectState>()(
         // Don't create undo entry if only lastModified changed
         const ap = { ...a.project, lastModified: 0 };
         const bp = { ...b.project, lastModified: 0 };
-        return JSON.stringify(ap) === JSON.stringify(bp);
+        return equal(ap, bp);
       },
     }
   )
