@@ -3,6 +3,7 @@ mod ffmpeg;
 mod image;
 
 pub use commands::import::import_images;
+pub use commands::import::convert_heic;
 pub use commands::render::{render_video, cancel_render};
 pub use commands::disk::check_disk_space;
 pub use ffmpeg::startup_check::check_ffmpeg;
@@ -19,6 +20,7 @@ pub fn run() {
             cancel_render,
             check_disk_space,
             check_ffmpeg,
+            convert_heic,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
