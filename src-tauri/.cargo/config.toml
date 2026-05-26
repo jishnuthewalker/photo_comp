@@ -1,0 +1,2 @@
+# Project-local cargo config for Windows GNU toolchain
+# dlltool and MinGW tools are provided via PATH (see below)
