@@ -17,4 +17,15 @@ describe("tapTempoMedian", () => {
     const bpm = tapTempoMedian(taps);
     expect(bpm).toBeCloseTo(120, 0); // median of 500ms intervals
   });
+
+  it("returns null for duplicate timestamps (zero interval)", () => {
+    expect(tapTempoMedian([1000, 1000])).toBeNull();
+  });
+
+  it("handles unsorted input by sorting first", () => {
+    // Same intervals as the sorted case: 500ms each
+    const taps = [500, 0, 1000, 1500]; // unsorted
+    const bpm = tapTempoMedian(taps);
+    expect(bpm).toBeCloseTo(120, 0);
+  });
 });

@@ -36,8 +36,12 @@ export function buildFrameCounts(
   });
 }
 
-/** Returns index of largest value in sorted `times` that is <= `target`. */
+/**
+ * Returns index of largest value in sorted `times` that is <= `target`.
+ * Clamps to 0 if target is before times[0] or times is empty.
+ */
 export function binarySearchLE(times: number[], target: number): number {
+  if (times.length === 0) return 0; // no photos — caller must handle empty case
   let lo = 0;
   let hi = times.length - 1;
   while (lo < hi) {

@@ -75,4 +75,8 @@ describe("binarySearchLE", () => {
     const times = [0.5, 1.0];
     expect(binarySearchLE(times, 0.1)).toBe(0);
   });
+
+  it("returns 0 for empty times array", () => {
+    expect(binarySearchLE([], 1.0)).toBe(0);
+  });
 });
