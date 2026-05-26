@@ -1,6 +1,6 @@
 mod commands;
 mod ffmpeg;
-mod image_processing;
+mod image;
 
 pub use commands::import::import_images;
 pub use commands::render::{render_video, cancel_render};
