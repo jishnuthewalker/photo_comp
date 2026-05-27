@@ -18,6 +18,7 @@ export function useAudioEngine(): AudioEngine {
   const startTimeRef = useRef<number>(0);   // audioContext.currentTime when play started
   const offsetRef = useRef<number>(0);      // offset into buffer when play started
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
   const [duration, setDuration] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
 
@@ -46,37 +47,48 @@ export function useAudioEngine(): AudioEngine {
     const ctx = getContext();
     const buf = bufferRef.current;
     if (!buf) return;
-    sourceRef.current?.stop();
+    if (sourceRef.current) {
+      sourceRef.current.onended = null;
+      sourceRef.current.stop();
+    }
     const source = ctx.createBufferSource();
     source.buffer = buf;
     source.connect(ctx.destination);
     source.start(0, fromSeconds);
-    source.onended = () => setIsPlaying(false);
+    source.onended = () => { isPlayingRef.current = false; setIsPlaying(false); };
     sourceRef.current = source;
     startTimeRef.current = ctx.currentTime;
     offsetRef.current = fromSeconds;
+    isPlayingRef.current = true;
     setIsPlaying(true);
   }, [getContext]);
 
   const pause = useCallback(() => {
-    sourceRef.current?.stop();
+    if (!isPlayingRef.current) return;
+    if (sourceRef.current) {
+      sourceRef.current.onended = null;
+      sourceRef.current.stop();
+    }
     offsetRef.current += (contextRef.current?.currentTime ?? 0) - startTimeRef.current;
+    isPlayingRef.current = false;
     setIsPlaying(false);
   }, []);
 
   const seek = useCallback((toSeconds: number) => {
-    const wasPlaying = isPlaying;
-    if (isPlaying) {
-      sourceRef.current?.stop();
+    const wasPlaying = isPlayingRef.current;
+    if (isPlayingRef.current) {
+      if (sourceRef.current) { sourceRef.current.onended = null; sourceRef.current.stop(); }
+      isPlayingRef.current = false;
+      setIsPlaying(false);
     }
     offsetRef.current = toSeconds;
     if (wasPlaying) play(toSeconds);
-  }, [isPlaying, play]);
+  }, [play]);
 
   const currentTime = useCallback((): number => {
-    if (!isPlaying) return offsetRef.current;
+    if (!isPlayingRef.current) return offsetRef.current;
     return offsetRef.current + ((contextRef.current?.currentTime ?? 0) - startTimeRef.current);
-  }, [isPlaying]);
+  }, []);
 
   return { load, play, pause, seek, currentTime, duration, isPlaying, audioBuffer };
 }
