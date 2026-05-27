@@ -3,11 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
 import { Filmstrip } from "./components/Filmstrip/Filmstrip";
 import { ExportPanel } from "./components/ExportPanel/ExportPanel";
+import { BpmControls } from "./components/BpmControls/BpmControls";
+import { useAudioEngine } from "./hooks/useAudioEngine";
 
 export default function App() {
   const [ffmpegError, setFfmpegError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const audioEngine = useAudioEngine();
 
   useEffect(() => {
     invoke<void>("check_ffmpeg").catch((e: string) => setFfmpegError(e));
@@ -20,6 +23,7 @@ export default function App() {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#111", color: "#fff" }}>
       <Filmstrip activePhotoIndex={activeIndex} onCellClick={setActiveIndex} />
+      <BpmControls audioEngine={audioEngine} />
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#555" }}>
         Preview canvas — Task 11
       </div>
