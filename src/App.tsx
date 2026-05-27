@@ -42,8 +42,9 @@ export default function App() {
 
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "z") useProjectStore.temporal.getState().undo();
-      if (e.ctrlKey && e.key === "y") useProjectStore.temporal.getState().redo();
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey && k === "z") { e.preventDefault(); useProjectStore.temporal.getState().undo(); }
+      if (e.ctrlKey && k === "y") { e.preventDefault(); useProjectStore.temporal.getState().redo(); }
     };
     window.addEventListener("keydown", handle);
     return () => window.removeEventListener("keydown", handle);
