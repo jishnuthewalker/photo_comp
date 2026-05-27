@@ -17,6 +17,31 @@ pub struct PhotoItem {
     pub frame_count: u32,
 }
 
+pub fn crop_dimensions(width: u32, height: u32, crop_ratio: &str) -> (u32, u32) {
+    match crop_ratio {
+        "16:9" => {
+            let h = height;
+            let w = (h * 16 / 9).min(width);
+            (w, h)
+        }
+        "9:16" => {
+            let h = height;
+            let w = (h * 9 / 16).min(width);
+            (w, h)
+        }
+        "1:1" => {
+            let s = width.min(height);
+            (s, s)
+        }
+        "4:3" => {
+            let h = height;
+            let w = (h * 4 / 3).min(width);
+            (w, h)
+        }
+        _ => (width, height),
+    }
+}
+
 pub fn build_filter_complex(n: usize, width: u32, height: u32) -> String {
     let scales: String = (0..n)
         .map(|i| format!(

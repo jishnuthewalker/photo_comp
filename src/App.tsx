@@ -4,6 +4,7 @@ import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
 import { Filmstrip } from "./components/Filmstrip/Filmstrip";
 import { ExportPanel } from "./components/ExportPanel/ExportPanel";
 import { BpmControls } from "./components/BpmControls/BpmControls";
+import { ControlsPanel } from "./components/ControlsPanel/ControlsPanel";
 import { PreviewCanvas } from "./components/PreviewCanvas/PreviewCanvas";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { usePreviewSync } from "./hooks/usePreviewSync";
@@ -47,6 +48,7 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <PreviewCanvas photos={project.photos} activeIndex={activeIndex} />
       </div>
+      <ControlsPanel />
       <div style={{ padding: 8, borderTop: "1px solid #222" }}>
         <button onClick={() => setShowImport(true)} style={{ padding: "6px 14px", background: "#5b6eff", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
           + Import Photos

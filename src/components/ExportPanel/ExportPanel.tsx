@@ -55,6 +55,7 @@ export function ExportPanel() {
           fps: project.outputConfig.fps,
           width,
           height,
+          cropRatio: project.cropRatio,
           transition: project.globalTransition,
           songPath: project.song?.path ?? null,
           firstBeatOffsetMs: project.firstBeatOffsetMs,

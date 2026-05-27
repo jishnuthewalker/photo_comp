@@ -45,6 +45,7 @@ pub struct RenderConfig {
     pub fps: u32,
     pub width: u32,
     pub height: u32,
+    pub crop_ratio: String,
     pub transition: String,
     pub song_path: Option<String>,
     pub first_beat_offset_ms: f64,
@@ -111,6 +112,10 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
     let mut frames_encoded: u32 = 0;
     let children = active_children();
 
+    let (crop_w, crop_h) = crate::ffmpeg::render_pipeline::crop_dimensions(
+        config.width, config.height, &config.crop_ratio,
+    );
+
     for (i, chunk) in chunks.iter().enumerate() {
         if is_cancelled(&config.render_id) {
             cleanup(&config.render_id, &work_dir);
@@ -118,7 +123,7 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
         }
         let chunk_path = work_dir.join(format!("chunk_{i:04}.mp4"));
         render_chunk(
-            &ffmpeg, chunk, config.fps, config.width, config.height,
+            &ffmpeg, chunk, config.fps, crop_w, crop_h,
             &chunk_path, &config.render_id, &children,
         )
         .map_err(|e| {
