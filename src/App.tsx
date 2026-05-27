@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
+import { Filmstrip } from "./components/Filmstrip/Filmstrip";
 
 export default function App() {
   const [ffmpegError, setFfmpegError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
     invoke<void>("check_ffmpeg").catch((e: string) => setFfmpegError(e));
@@ -22,9 +24,15 @@ export default function App() {
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#111", color: "#fff" }}>
-      <button onClick={() => setShowImport(true)} style={{ margin: 16, alignSelf: "flex-start", padding: "8px 16px", background: "#5b6eff", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
-        Import Photos
-      </button>
+      <Filmstrip activePhotoIndex={activeIndex} onCellClick={setActiveIndex} />
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#555" }}>
+        Preview canvas — Task 11
+      </div>
+      <div style={{ padding: 8, borderTop: "1px solid #222" }}>
+        <button onClick={() => setShowImport(true)} style={{ padding: "6px 14px", background: "#5b6eff", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
+          + Import Photos
+        </button>
+      </div>
       {showImport && <PhotoGrid onClose={() => setShowImport(false)} />}
     </div>
   );
