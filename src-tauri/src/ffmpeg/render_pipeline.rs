@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 pub const CHUNK_SIZE: usize = 50;
 
@@ -33,6 +35,8 @@ pub fn render_chunk(
     width: u32,
     height: u32,
     output: &Path,
+    render_id: &str,
+    child_registry: &Arc<Mutex<HashMap<String, std::process::Child>>>,
 ) -> anyhow::Result<()> {
     let mut cmd = Command::new(ffmpeg);
     cmd.stdout(Stdio::null()).stderr(Stdio::piped());
@@ -58,12 +62,33 @@ pub fn render_chunk(
               "-y"]);
     cmd.arg(output);
 
-    let out = cmd.output()?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(anyhow::anyhow!("FFmpeg chunk failed: {stderr}"));
+    // Spawn without blocking — register child so cancel_render can kill it
+    let child = cmd.spawn()?;
+    child_registry.lock().unwrap().insert(render_id.to_string(), child);
+
+    // Poll outside the lock so cancel_render can acquire it to kill the process
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut reg = child_registry.lock().unwrap();
+        match reg.get_mut(render_id) {
+            None => {
+                // Removed by cancel_render after killing — treat as cancelled
+                return Err(anyhow::anyhow!("cancelled"));
+            }
+            Some(c) => match c.try_wait()? {
+                Some(status) => {
+                    let ok = status.success();
+                    reg.remove(render_id);
+                    if ok {
+                        return Ok(());
+                    } else {
+                        return Err(anyhow::anyhow!("FFmpeg chunk failed (exit {:?})", status.code()));
+                    }
+                }
+                None => {} // still running — continue polling
+            },
+        }
     }
-    Ok(())
 }
 
 pub fn build_concat_list(chunk_paths: &[PathBuf]) -> String {

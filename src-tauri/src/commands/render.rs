@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use crate::ffmpeg::render_pipeline::{render_chunk, build_concat_list, PhotoItem, CHUNK_SIZE, estimate_bytes};
 
+// ── Cancel flags ─────────────────────────────────────────────────────────────
+
 static CANCEL_FLAGS: std::sync::OnceLock<Arc<Mutex<HashMap<String, bool>>>> =
     std::sync::OnceLock::new();
 
@@ -15,6 +17,17 @@ fn cancel_flags() -> Arc<Mutex<HashMap<String, bool>>> {
 fn is_cancelled(render_id: &str) -> bool {
     cancel_flags().lock().unwrap().get(render_id).copied().unwrap_or(false)
 }
+
+// ── Active child registry (for killable cancel on Windows) ───────────────────
+
+static ACTIVE_CHILDREN: std::sync::OnceLock<Arc<Mutex<HashMap<String, std::process::Child>>>> =
+    std::sync::OnceLock::new();
+
+fn active_children() -> Arc<Mutex<HashMap<String, std::process::Child>>> {
+    ACTIVE_CHILDREN.get_or_init(|| Arc::new(Mutex::new(HashMap::new()))).clone()
+}
+
+// ── Serde types ──────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,11 +59,26 @@ pub struct RenderProgress {
     pub frames_encoded: u32,
 }
 
+// ── Commands ─────────────────────────────────────────────────────────────────
+
+/// Async Tauri command — offloads all blocking work to a dedicated OS thread
+/// so the Tokio worker pool is never starved.
 #[tauri::command]
 pub async fn render_video(
     app: tauri::AppHandle,
     config: RenderConfig,
 ) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || render_video_sync(app, config))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<String, String> {
+    // Fix 4: guard against empty photo list
+    if config.photos.is_empty() {
+        return Err("No photos to render".to_string());
+    }
+
     let required = estimate_bytes(config.total_duration_s, config.width, config.height, config.fps);
     let output_dir = Path::new(&config.output_path).parent().unwrap_or(Path::new("."));
     let has_space = crate::commands::disk::check_disk_space(
@@ -66,6 +94,12 @@ pub async fn render_video(
     std::fs::create_dir_all(&work_dir).map_err(|e| e.to_string())?;
     cancel_flags().lock().unwrap().insert(config.render_id.clone(), false);
 
+    // Helper: clean up workdir and cancel flag on any exit path
+    let cleanup = |render_id: &str, work_dir: &std::path::Path| {
+        cancel_flags().lock().unwrap().remove(render_id);
+        std::fs::remove_dir_all(work_dir).ok();
+    };
+
     let photos: Vec<PhotoItem> = config.photos.iter().map(|p| PhotoItem {
         path: PathBuf::from(&p.path),
         frame_count: p.frame_count,
@@ -75,16 +109,23 @@ pub async fn render_video(
     let total_chunks = chunks.len();
     let mut chunk_paths: Vec<PathBuf> = Vec::new();
     let mut frames_encoded: u32 = 0;
+    let children = active_children();
 
     for (i, chunk) in chunks.iter().enumerate() {
         if is_cancelled(&config.render_id) {
-            std::fs::remove_dir_all(&work_dir).ok();
-            cancel_flags().lock().unwrap().remove(&config.render_id);
+            cleanup(&config.render_id, &work_dir);
             return Err("cancelled".to_string());
         }
         let chunk_path = work_dir.join(format!("chunk_{i:04}.mp4"));
-        render_chunk(&ffmpeg, chunk, config.fps, config.width, config.height, &chunk_path)
-            .map_err(|e| e.to_string())?;
+        render_chunk(
+            &ffmpeg, chunk, config.fps, config.width, config.height,
+            &chunk_path, &config.render_id, &children,
+        )
+        .map_err(|e| {
+            // Fix 5: cleanup on chunk error / cancellation
+            cleanup(&config.render_id, &work_dir);
+            e.to_string()
+        })?;
         chunk_paths.push(chunk_path);
         frames_encoded += chunk.iter().map(|p| p.frame_count).sum::<u32>();
         app.emit("render_progress", RenderProgress {
@@ -95,8 +136,12 @@ pub async fn render_video(
     }
 
     let concat_file = work_dir.join("concat.txt");
-    std::fs::write(&concat_file, build_concat_list(&chunk_paths)).map_err(|e| e.to_string())?;
+    std::fs::write(&concat_file, build_concat_list(&chunk_paths)).map_err(|e| {
+        cleanup(&config.render_id, &work_dir);
+        e.to_string()
+    })?;
 
+    // Final mux (concat + optional audio) — also register child for killability
     let mut cmd = std::process::Command::new(&ffmpeg);
     cmd.args(["-y", "-f", "concat", "-safe", "0", "-i"]);
     cmd.arg(&concat_file);
@@ -115,19 +160,71 @@ pub async fn render_video(
         cmd.creation_flags(0x08000000);
     }
 
+    cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
     cmd.arg(&config.output_path);
-    let out = cmd.output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!("FFmpeg mux failed: {}", String::from_utf8_lossy(&out.stderr)));
+
+    let mux_id = format!("{}-mux", config.render_id);
+    let mux_child = cmd.spawn().map_err(|e| {
+        cleanup(&config.render_id, &work_dir);
+        e.to_string()
+    })?;
+    children.lock().unwrap().insert(mux_id.clone(), mux_child);
+
+    // Poll mux child outside the lock
+    let mux_status = loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut reg = children.lock().unwrap();
+        match reg.get_mut(&mux_id) {
+            None => {
+                // Killed by cancel_render
+                cleanup(&config.render_id, &work_dir);
+                return Err("cancelled".to_string());
+            }
+            Some(c) => match c.try_wait() {
+                Err(e) => {
+                    reg.remove(&mux_id);
+                    cleanup(&config.render_id, &work_dir);
+                    return Err(e.to_string());
+                }
+                Ok(Some(status)) => {
+                    reg.remove(&mux_id);
+                    break status;
+                }
+                Ok(None) => {} // still running
+            },
+        }
+    };
+
+    if !mux_status.success() {
+        cleanup(&config.render_id, &work_dir);
+        return Err(format!("FFmpeg mux failed (exit {:?})", mux_status.code()));
     }
 
-    std::fs::remove_dir_all(&work_dir).ok();
+    // Fix 6: cleanup on success path too (workdir + cancel flag)
+    cleanup(&config.render_id, &work_dir);
     Ok(config.output_path.clone())
 }
 
 #[tauri::command]
 pub async fn cancel_render(render_id: String) -> Result<(), String> {
     cancel_flags().lock().unwrap().insert(render_id.clone(), true);
+
+    // Fix 2: kill any active FFmpeg child (chunk or mux) on Windows
+    {
+        let children = active_children();
+        let mut reg = children.lock().unwrap();
+        // Kill main chunk child
+        if let Some(mut child) = reg.remove(&render_id) {
+            child.kill().ok();
+        }
+        // Kill mux child if present
+        let mux_id = format!("{render_id}-mux");
+        if let Some(mut child) = reg.remove(&mux_id) {
+            child.kill().ok();
+        }
+    }
+
+    // Best-effort workdir removal (may now succeed since process is killed)
     let work_dir = std::env::temp_dir().join(format!("photocomp-{render_id}"));
     std::fs::remove_dir_all(&work_dir).ok();
     Ok(())
