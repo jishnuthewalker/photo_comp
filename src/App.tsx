@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
 import { Filmstrip } from "./components/Filmstrip/Filmstrip";
+import { ExportPanel } from "./components/ExportPanel/ExportPanel";
 
 export default function App() {
   const [ffmpegError, setFfmpegError] = useState<string | null>(null);
@@ -13,13 +14,7 @@ export default function App() {
   }, []);
 
   if (ffmpegError) {
-    return (
-      <div style={{ padding: 32, color: "red" }}>
-        <h2>FFmpeg Error</h2>
-        <p>{ffmpegError}</p>
-        <p>Download the GPL build from: https://github.com/BtbN/FFmpeg-Builds/releases</p>
-      </div>
-    );
+    return <div style={{ padding: 32, color: "red" }}><h2>FFmpeg Error</h2><p>{ffmpegError}</p></div>;
   }
 
   return (
@@ -33,6 +28,7 @@ export default function App() {
           + Import Photos
         </button>
       </div>
+      <ExportPanel />
       {showImport && <PhotoGrid onClose={() => setShowImport(false)} />}
     </div>
   );

@@ -31,3 +31,6 @@ anyhow = "1"
 tempfile = "3"
 walkdir = "2"
 dunce = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
