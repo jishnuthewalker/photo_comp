@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProjectStore } from "../../store/projectStore";
 
 export function ControlsPanel() {
@@ -9,6 +9,7 @@ export function ControlsPanel() {
   const setGlobalTransition = useProjectStore((s) => s.setGlobalTransition);
 
   const [beatsInput, setBeatsInput] = useState(String(project.beatsPerPhoto));
+  useEffect(() => { setBeatsInput(String(project.beatsPerPhoto)); }, [project.beatsPerPhoto]);
 
   const selectStyle = {
     background: "#222",
