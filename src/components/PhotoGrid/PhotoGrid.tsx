@@ -31,12 +31,14 @@ export function PhotoGrid({ onClose }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [heicPending, setHeicPending] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const handleImport = async () => {
     const result = await open({ multiple: true, filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "heic", "heif"] }] });
     if (!result) return;
     const paths = Array.isArray(result) ? result : [result];
     setLoading(true);
+    setImportError(null);
     try {
       const importResult = await invoke<ImportResult>("import_images", { paths, thumbSize: 240 });
       if (importResult.heicPaths.length > 0) {
@@ -44,6 +46,8 @@ export function PhotoGrid({ onClose }: Props) {
       }
       setPhotos(importResult.photos);
       setSelected(new Set(importResult.photos.map((_, i) => i)));
+    } catch (err) {
+      setImportError(String(err));
     } finally {
       setLoading(false);
     }
@@ -51,17 +55,22 @@ export function PhotoGrid({ onClose }: Props) {
 
   const handleConvertHeic = async () => {
     setLoading(true);
+    setImportError(null);
     try {
       const converted = await invoke<string[]>("convert_heic", { heicPaths: heicPending });
       setHeicPending([]);
       const importResult = await invoke<ImportResult>("import_images", { paths: converted, thumbSize: 240 });
-      setPhotos((prev) => [...prev, ...importResult.photos]);
-      setSelected((prev) => {
-        const next = new Set(prev);
-        const base = photos.length;
-        importResult.photos.forEach((_, i) => next.add(base + i));
-        return next;
+      setPhotos((prev) => {
+        const updated = [...prev, ...importResult.photos];
+        setSelected((prevSel) => {
+          const next = new Set(prevSel);
+          importResult.photos.forEach((_, i) => next.add(prev.length + i));
+          return next;
+        });
+        return updated;
       });
+    } catch (err) {
+      setImportError(String(err));
     } finally {
       setLoading(false);
     }
@@ -105,6 +114,12 @@ export function PhotoGrid({ onClose }: Props) {
           </div>
         )}
 
+        {importError && (
+          <div style={{ background: "#2a0e0e", border: "1px solid #a03030", borderRadius: 4, padding: 12, color: "#f06060", fontSize: 13 }}>
+            {importError}
+          </div>
+        )}
+
         <button onClick={handleImport} disabled={loading} style={{ padding: "8px 16px", background: "#5b6eff", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
           {loading ? "Loading…" : "Choose Photos / Folder"}
         </button>
@@ -122,7 +137,7 @@ export function PhotoGrid({ onClose }: Props) {
               const i = rowIndex * COLUMNS + columnIndex;
               if (i >= photos.length) return null;
               return (
-                <div style={style}>
+                <div key={i} style={style}>
                   <PhotoGridCell
                     thumbPath={photos[i].thumbPath}
                     selected={selected.has(i)}
