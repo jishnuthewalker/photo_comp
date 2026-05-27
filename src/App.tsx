@@ -4,13 +4,33 @@ import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
 import { Filmstrip } from "./components/Filmstrip/Filmstrip";
 import { ExportPanel } from "./components/ExportPanel/ExportPanel";
 import { BpmControls } from "./components/BpmControls/BpmControls";
+import { PreviewCanvas } from "./components/PreviewCanvas/PreviewCanvas";
 import { useAudioEngine } from "./hooks/useAudioEngine";
+import { usePreviewSync } from "./hooks/usePreviewSync";
+import { useProjectStore } from "./store/projectStore";
+import { buildCumulativeTimeline } from "./lib/cumulativeTimeline";
 
 export default function App() {
   const [ffmpegError, setFfmpegError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const audioEngine = useAudioEngine();
+  const project = useProjectStore((s) => s.project);
+
+  usePreviewSync({
+    photos: project.photos,
+    bpm: project.bpm,
+    beatsPerPhoto: project.beatsPerPhoto,
+    firstBeatOffsetMs: project.firstBeatOffsetMs,
+    audioEngine,
+    onPhotoChange: setActiveIndex,
+  });
+
+  const handleFilmstripClick = (index: number) => {
+    const times = buildCumulativeTimeline(project.photos, project.bpm, project.beatsPerPhoto, project.firstBeatOffsetMs);
+    audioEngine.seek(times[index] ?? 0);
+    setActiveIndex(index);
+  };
 
   useEffect(() => {
     invoke<void>("check_ffmpeg").catch((e: string) => setFfmpegError(e));
@@ -22,10 +42,10 @@ export default function App() {
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#111", color: "#fff" }}>
-      <Filmstrip activePhotoIndex={activeIndex} onCellClick={setActiveIndex} />
+      <Filmstrip activePhotoIndex={activeIndex} onCellClick={handleFilmstripClick} />
       <BpmControls audioEngine={audioEngine} />
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#555" }}>
-        Preview canvas — Task 11
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <PreviewCanvas photos={project.photos} activeIndex={activeIndex} />
       </div>
       <div style={{ padding: 8, borderTop: "1px solid #222" }}>
         <button onClick={() => setShowImport(true)} style={{ padding: "6px 14px", background: "#5b6eff", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
