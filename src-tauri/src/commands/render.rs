@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
-use crate::ffmpeg::render_pipeline::{render_chunk, build_concat_list, PhotoItem, CHUNK_SIZE, estimate_bytes};
+use crate::ffmpeg::render_pipeline::{build_concat_list, PhotoItem, CHUNK_SIZE, estimate_bytes};
 
 // ── Cancel flags ─────────────────────────────────────────────────────────────
 
@@ -122,10 +122,17 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
             return Err("cancelled".to_string());
         }
         let chunk_path = work_dir.join(format!("chunk_{i:04}.mp4"));
-        render_chunk(
-            &ffmpeg, chunk, config.fps, crop_w, crop_h,
-            &chunk_path, &config.render_id, &children,
-        )
+        if config.transition == "crossfade" {
+            crate::ffmpeg::render_pipeline::render_chunk_crossfade(
+                &ffmpeg, chunk, config.fps, crop_w, crop_h,
+                &chunk_path, &config.render_id, &children,
+            )
+        } else {
+            crate::ffmpeg::render_pipeline::render_chunk(
+                &ffmpeg, chunk, config.fps, crop_w, crop_h,
+                &chunk_path, &config.render_id, &children,
+            )
+        }
         .map_err(|e| {
             // Fix 5: cleanup on chunk error / cancellation
             cleanup(&config.render_id, &work_dir);

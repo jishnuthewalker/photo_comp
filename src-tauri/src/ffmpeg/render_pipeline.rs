@@ -116,6 +116,96 @@ pub fn render_chunk(
     }
 }
 
+pub fn render_chunk_crossfade(
+    ffmpeg: &Path,
+    photos: &[PhotoItem],
+    fps: u32,
+    width: u32,
+    height: u32,
+    output: &Path,
+    render_id: &str,
+    child_registry: &Arc<Mutex<HashMap<String, std::process::Child>>>,
+) -> anyhow::Result<()> {
+    if photos.len() < 2 {
+        return render_chunk(ffmpeg, photos, fps, width, height, output, render_id, child_registry);
+    }
+    let mut cmd = Command::new(ffmpeg);
+    cmd.stdout(Stdio::null()).stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    for item in photos {
+        cmd.args(["-loop", "1", "-vframes", &item.frame_count.to_string(), "-r", &fps.to_string(), "-i"]);
+        cmd.arg(&item.path);
+    }
+
+    let n = photos.len();
+    let fade_frames = (fps / 4).max(1); // 25% of one beat, min 1 frame
+    let fade_dur = fade_frames as f64 / fps as f64;
+
+    // Build scale filters
+    let scales: String = (0..n)
+        .map(|i| format!("[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,format=yuv420p[s{i}]"))
+        .collect::<Vec<_>>().join(";");
+
+    // Chain xfade filters
+    // xfade offset = time in merged output where the fade starts
+    // After each merge, output duration shrinks by fade_dur
+    let mut xfade_parts: Vec<String> = Vec::new();
+    let mut merged_duration = 0f64;
+    let mut last_label = "[s0]".to_string();
+
+    for i in 0..(n - 1) {
+        let dur_i = photos[i].frame_count as f64 / fps as f64;
+        merged_duration += dur_i;
+        let fade_start = merged_duration - fade_dur;
+        let out_label = if i == n - 2 { "[out]".to_string() } else { format!("[x{i}]") };
+        let next_label = format!("[s{}]", i + 1);
+        xfade_parts.push(format!(
+            "{last_label}{next_label}xfade=transition=dissolve:duration={fade_dur:.4}:offset={fade_start:.4}{out_label}"
+        ));
+        last_label = if i == n - 2 { "[out]".to_string() } else { format!("[x{i}]") };
+        merged_duration -= fade_dur;
+    }
+
+    let filter = format!("{scales};{}", xfade_parts.join(";"));
+
+    cmd.args(["-filter_complex", &filter,
+              "-map", "[out]", "-r", &fps.to_string(),
+              "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+              "-y"]);
+    cmd.arg(output);
+
+    // Same spawn+poll pattern as render_chunk for cancellation support
+    let child = cmd.spawn()?;
+    child_registry.lock().unwrap().insert(render_id.to_string(), child);
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut reg = child_registry.lock().unwrap();
+        match reg.get_mut(render_id) {
+            None => return Err(anyhow::anyhow!("cancelled")),
+            Some(c) => match c.try_wait()? {
+                Some(status) => {
+                    let ok = status.success();
+                    reg.remove(render_id);
+                    if ok {
+                        return Ok(());
+                    } else {
+                        return Err(anyhow::anyhow!("FFmpeg crossfade chunk failed (exit {:?})", status.code()));
+                    }
+                }
+                None => {}
+            },
+        }
+    }
+}
+
 pub fn build_concat_list(chunk_paths: &[PathBuf]) -> String {
     chunk_paths.iter()
         .map(|p| format!("file '{}'\n", p.to_string_lossy().replace('\\', "/")))
