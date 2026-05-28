@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { nanoid } from "nanoid";
 import { useProjectStore } from "../../store/projectStore";
 import { buildCumulativeTimeline, buildFrameCounts } from "../../lib/cumulativeTimeline";
@@ -62,7 +63,11 @@ export function ExportPanel() {
           totalDurationS: totalDuration,
         },
       });
-      alert(`Render complete: ${result}`);
+      try {
+        await revealItemInDir(result);
+      } catch {
+        // reveal not supported on this platform — ignore
+      }
     } catch (e) {
       setError(String(e));
     } finally {
