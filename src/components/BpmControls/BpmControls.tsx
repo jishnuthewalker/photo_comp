@@ -18,6 +18,21 @@ export function BpmControls({ audioEngine }: Props) {
 
   const [tapTimes, setTapTimes] = useState<number[]>([]);
   const [bpmInput, setBpmInput] = useState(String(bpm));
+  const [detecting, setDetecting] = useState(false);
+
+  const handleAutoDetect = async () => {
+    if (!audioEngine.audioBuffer) return;
+    setDetecting(true);
+    try {
+      const { EssentiaBpmDetector } = await import("../../lib/bpmDetector");
+      const { bpm: detected } = await EssentiaBpmDetector.detect(audioEngine.audioBuffer);
+      const rounded = Math.round(detected * 10) / 10;
+      setBpm(rounded);
+      setBpmInput(String(rounded));
+    } finally {
+      setDetecting(false);
+    }
+  };
 
   const handleImportSong = async () => {
     const path = await open({ filters: [{ name: "Audio", extensions: ["mp3", "aac", "wav", "flac", "m4a"] }] });
@@ -79,6 +94,12 @@ export function BpmControls({ audioEngine }: Props) {
       <button onClick={handleTap} style={{ padding: "4px 14px", background: "#333", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>
         Tap
       </button>
+
+      {song && (
+        <button onClick={handleAutoDetect} disabled={detecting} style={{ padding: "4px 10px", background: "#333", color: "#fff", border: "1px solid #555", borderRadius: 4, cursor: "pointer" }}>
+          {detecting ? "Detecting…" : "Auto BPM"}
+        </button>
+      )}
 
       <label style={{ color: "#aaa", fontSize: 13 }}>
         Offset:
