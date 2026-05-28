@@ -19,16 +19,20 @@ export function BpmControls({ audioEngine }: Props) {
   const [tapTimes, setTapTimes] = useState<number[]>([]);
   const [bpmInput, setBpmInput] = useState(String(bpm));
   const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
 
   const handleAutoDetect = async () => {
     if (!audioEngine.audioBuffer) return;
     setDetecting(true);
+    setDetectError(null);
     try {
       const { EssentiaBpmDetector } = await import("../../lib/bpmDetector");
       const { bpm: detected } = await EssentiaBpmDetector.detect(audioEngine.audioBuffer);
       const rounded = Math.round(detected * 10) / 10;
       setBpm(rounded);
       setBpmInput(String(rounded));
+    } catch (e) {
+      setDetectError(String(e));
     } finally {
       setDetecting(false);
     }
@@ -100,6 +104,7 @@ export function BpmControls({ audioEngine }: Props) {
           {detecting ? "Detecting…" : "Auto BPM"}
         </button>
       )}
+      {detectError && <span style={{ color: "#f66", fontSize: 12 }}>{detectError}</span>}
 
       <label style={{ color: "#aaa", fontSize: 13 }}>
         Offset:
