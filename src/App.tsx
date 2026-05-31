@@ -37,7 +37,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    invoke<void>("check_ffmpeg").catch((e: string) => setFfmpegError(e));
+    invoke<void>("check_ffmpeg").catch((e: unknown) => setFfmpegError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   useEffect(() => {

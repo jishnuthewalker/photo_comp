@@ -5,11 +5,37 @@ export function ControlsPanel() {
   const project = useProjectStore((s) => s.project);
   const setCropRatio = useProjectStore((s) => s.setCropRatio);
   const setAlignment = useProjectStore((s) => s.setAlignment);
+  const setScaleMode = useProjectStore((s) => s.setScaleMode);
   const setBeatsPerPhoto = useProjectStore((s) => s.setBeatsPerPhoto);
   const setGlobalTransition = useProjectStore((s) => s.setGlobalTransition);
 
+  // "X photos per Y beats" UI — stored as beatsPerPhoto = Y/X
+  const [photosInput, setPhotosInput] = useState("1");
   const [beatsInput, setBeatsInput] = useState(String(project.beatsPerPhoto));
-  useEffect(() => { setBeatsInput(String(project.beatsPerPhoto)); }, [project.beatsPerPhoto]);
+
+  // Sync display when store changes externally (undo/load)
+  useEffect(() => {
+    setBeatsInput(String(project.beatsPerPhoto));
+    setPhotosInput("1");
+  }, [project.beatsPerPhoto]);
+
+  const commitRatio = (photosStr: string, beatsStr: string) => {
+    const photos = parseFloat(photosStr);
+    const beats = parseFloat(beatsStr);
+    if (!isNaN(photos) && photos > 0 && !isNaN(beats) && beats > 0) {
+      setBeatsPerPhoto(beats / photos);
+    }
+  };
+
+  const inputStyle = {
+    width: 44,
+    background: "#222",
+    color: "#fff",
+    border: "1px solid #444",
+    borderRadius: 4,
+    padding: "3px 6px",
+    textAlign: "center" as const,
+  };
 
   const selectStyle = {
     background: "#222",
@@ -49,6 +75,20 @@ export function ControlsPanel() {
       <label
         style={{ color: "#aaa", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
       >
+        Scale:
+        <select
+          value={project.scaleMode}
+          onChange={(e) => setScaleMode(e.target.value as any)}
+          style={selectStyle}
+        >
+          <option value="cover">Fill</option>
+          <option value="contain">Fit</option>
+        </select>
+      </label>
+
+      <label
+        style={{ color: "#aaa", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
+      >
         Align:
         <select
           value={project.alignment}
@@ -63,34 +103,28 @@ export function ControlsPanel() {
         </select>
       </label>
 
-      <label
-        style={{ color: "#aaa", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
-      >
-        Beats/photo:
+      <div style={{ color: "#aaa", fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={photosInput}
+          onChange={(e) => setPhotosInput(e.target.value)}
+          onBlur={() => commitRatio(photosInput, beatsInput)}
+          style={inputStyle}
+        />
+        <span>photos per</span>
         <input
           type="number"
           min="0.25"
           step="0.25"
           value={beatsInput}
           onChange={(e) => setBeatsInput(e.target.value)}
-          onBlur={() => {
-            const v = parseFloat(beatsInput);
-            if (!isNaN(v) && v > 0) {
-              setBeatsPerPhoto(v);
-            } else {
-              setBeatsInput(String(project.beatsPerPhoto));
-            }
-          }}
-          style={{
-            width: 60,
-            background: "#222",
-            color: "#fff",
-            border: "1px solid #444",
-            borderRadius: 4,
-            padding: "3px 6px",
-          }}
+          onBlur={() => commitRatio(photosInput, beatsInput)}
+          style={inputStyle}
         />
-      </label>
+        <span>beats</span>
+      </div>
 
       <label
         style={{ color: "#aaa", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
@@ -103,6 +137,7 @@ export function ControlsPanel() {
         >
           <option value="cut">Hard cut</option>
           <option value="crossfade">Crossfade</option>
+          <option value="stack">Stack</option>
         </select>
       </label>
     </div>

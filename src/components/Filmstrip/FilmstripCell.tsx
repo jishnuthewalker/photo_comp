@@ -9,9 +9,11 @@ interface Props {
   isActive: boolean;
   bpm: number;
   beatsPerPhoto: number;
+  cellW: number;
+  cellImgH: number;
 }
 
-export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto }: Props) {
+export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cellW, cellImgH }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: photo.id });
   const beats = photo.beatsOverride ?? beatsPerPhoto;
 
@@ -23,7 +25,7 @@ export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto }: Pr
         transition,
         opacity: isDragging ? 0.4 : 1,
         flexShrink: 0,
-        width: 80,
+        width: cellW,
         position: "relative",
         cursor: "grab",
         border: isActive ? "2px solid #5b6eff" : "2px solid transparent",
@@ -36,7 +38,7 @@ export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto }: Pr
       <img
         src={assetUrl(photo.thumbPath)}
         alt=""
-        style={{ width: 80, height: 60, objectFit: "cover", display: "block", borderRadius: 2 }}
+        style={{ width: cellW, height: cellImgH, objectFit: "cover", display: "block", borderRadius: 2 }}
       />
       <div style={{
         position: "absolute",

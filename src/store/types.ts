@@ -1,6 +1,7 @@
 export type AspectRatio = "16:9" | "9:16" | "1:1" | "4:3";
 export type Alignment = "center" | "top" | "bottom" | "left" | "right";
-export type Transition = "cut" | "crossfade";
+export type Transition = "cut" | "crossfade" | "stack";
+export type ScaleMode = "cover" | "contain";
 export type Resolution = "720p" | "1080p" | "4k";
 export type Fps = 24 | 30 | 60;
 
@@ -32,6 +33,7 @@ export interface Project {
   beatsPerPhoto: number; // float allowed, e.g. 0.5
   cropRatio: AspectRatio;
   alignment: Alignment;
+  scaleMode: ScaleMode;
   globalTransition: Transition;
   song?: AudioFile;
   outputConfig: OutputConfig;

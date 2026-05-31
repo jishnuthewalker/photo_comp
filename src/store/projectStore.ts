@@ -2,7 +2,7 @@ import { create, useStore } from "zustand";
 import { temporal } from "zundo";
 import { nanoid } from "nanoid";
 import equal from "fast-deep-equal";
-import type { Project, Photo, AudioFile, OutputConfig, AspectRatio, Alignment, Transition } from "./types";
+import type { Project, Photo, AudioFile, OutputConfig, AspectRatio, Alignment, Transition, ScaleMode } from "./types";
 
 function defaultProject(): Project {
   return {
@@ -15,6 +15,7 @@ function defaultProject(): Project {
     beatsPerPhoto: 1,
     cropRatio: "16:9",
     alignment: "center",
+    scaleMode: "cover",
     globalTransition: "cut",
     outputConfig: { format: "mp4", resolution: "1080p", fps: 30 },
     lastModified: Date.now(),
@@ -33,6 +34,7 @@ interface ProjectState {
   setBeatsPerPhoto: (n: number) => void;
   setCropRatio: (ratio: AspectRatio) => void;
   setAlignment: (alignment: Alignment) => void;
+  setScaleMode: (mode: ScaleMode) => void;
   setGlobalTransition: (t: Transition) => void;
   setSong: (song: AudioFile | undefined) => void;
   setOutputConfig: (config: OutputConfig) => void;
@@ -85,6 +87,7 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({ project: touch({ ...s.project, beatsPerPhoto }) })),
       setCropRatio: (cropRatio) => set((s) => ({ project: touch({ ...s.project, cropRatio }) })),
       setAlignment: (alignment) => set((s) => ({ project: touch({ ...s.project, alignment }) })),
+      setScaleMode: (scaleMode) => set((s) => ({ project: touch({ ...s.project, scaleMode }) })),
       setGlobalTransition: (globalTransition) =>
         set((s) => ({ project: touch({ ...s.project, globalTransition }) })),
       setSong: (song) => set((s) => ({ project: touch({ ...s.project, song }) })),
