@@ -43,7 +43,7 @@ export function ExportPanel() {
     );
     const lastTime = times[times.length - 1] ?? 0;
     const lastBeats = project.photos[project.photos.length - 1]?.beatsOverride ?? project.beatsPerPhoto;
-    const totalDuration = lastTime + (60 / project.bpm) * lastBeats;
+    const totalDuration = lastTime + (60 / project.bpm) * lastBeats - project.firstBeatOffsetMs / 1000;
 
     const unlisten = await listen<RenderProgress>("render_progress", (e) => setProgress(e.payload));
 

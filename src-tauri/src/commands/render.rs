@@ -81,7 +81,8 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
     }
 
     let required = estimate_bytes(config.total_duration_s, config.width, config.height, config.fps);
-    let output_dir = Path::new(&config.output_path).parent().unwrap_or(Path::new("."));
+    let output_path_clean = dunce::simplified(Path::new(&config.output_path)).to_path_buf();
+    let output_dir = output_path_clean.parent().unwrap_or(Path::new("."));
     let has_space = crate::commands::disk::check_disk_space(
         output_dir.to_string_lossy().into_owned(),
         required,
@@ -91,7 +92,9 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
     }
 
     let ffmpeg = crate::ffmpeg::ffmpeg_binary(&app).map_err(|e| e.to_string())?;
-    let work_dir = std::env::temp_dir().join(format!("photocomp-{}", config.render_id));
+    // Strip \\?\ prefix — FFmpeg doesn't handle extended-length paths
+    let work_dir = dunce::simplified(&std::env::temp_dir())
+        .join(format!("photocomp-{}", config.render_id));
     std::fs::create_dir_all(&work_dir).map_err(|e| e.to_string())?;
     cancel_flags().lock().unwrap().insert(config.render_id.clone(), false);
 
@@ -102,19 +105,71 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
     };
 
     let photos: Vec<PhotoItem> = config.photos.iter().map(|p| PhotoItem {
-        path: PathBuf::from(&p.path),
+        path: dunce::simplified(Path::new(&p.path)).to_path_buf(),
         frame_count: p.frame_count,
     }).collect();
+
+    let (crop_w, crop_h) = crate::ffmpeg::render_pipeline::crop_dimensions(
+        config.width, config.height, &config.crop_ratio,
+    );
+    let children = active_children();
+
+    // Stack transition: single-pass render of all photos, output goes directly to video_path
+    if config.transition == "stack" {
+        let video_path = work_dir.join("video.mp4");
+        crate::ffmpeg::render_pipeline::render_stack(
+            &ffmpeg, &photos, config.fps, crop_w, crop_h,
+            &video_path, &config.render_id, &children,
+        ).map_err(|e| { cleanup(&config.render_id, &work_dir); e.to_string() })?;
+
+        let total_frames: u32 = photos.iter().map(|p| p.frame_count).sum();
+        app.emit("render_progress", RenderProgress {
+            chunk_index: 0,
+            total_chunks: 1,
+            frames_encoded: total_frames,
+        }).ok();
+
+        // Mux audio onto the rendered video
+        let mut cmd = std::process::Command::new(&ffmpeg);
+        cmd.args(["-y", "-i"]);
+        cmd.arg(&video_path);
+        if let Some(song) = &config.song_path {
+            let offset_s = config.first_beat_offset_ms / 1000.0;
+            cmd.args(["-ss", &offset_s.to_string(), "-i", song]);
+            cmd.args(["-c:v", "copy", "-c:a", "aac", "-t", &config.total_duration_s.to_string()]);
+        } else {
+            cmd.args(["-c:v", "copy"]);
+        }
+        cmd.arg(&output_path_clean);
+        #[cfg(target_os = "windows")]
+        { use std::os::windows::process::CommandExt; cmd.creation_flags(0x08000000); }
+        let child = cmd.spawn().map_err(|e| { cleanup(&config.render_id, &work_dir); e.to_string() })?;
+        children.lock().unwrap().insert(config.render_id.clone(), child);
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let mut reg = children.lock().unwrap();
+            match reg.get_mut(&config.render_id) {
+                None => { cleanup(&config.render_id, &work_dir); return Err("cancelled".to_string()); }
+                Some(c) => match c.try_wait().map_err(|e| e.to_string())? {
+                    Some(status) => {
+                        reg.remove(&config.render_id);
+                        cleanup(&config.render_id, &work_dir);
+                        return if status.success() {
+                            Ok(output_path_clean.to_string_lossy().into_owned())
+                        } else {
+                            Err(format!("FFmpeg mux failed (exit {:?})", status.code()))
+                        };
+                    }
+                    None => {}
+                },
+            }
+        }
+    }
 
     let chunks: Vec<&[PhotoItem]> = photos.chunks(CHUNK_SIZE).collect();
     let total_chunks = chunks.len();
     let mut chunk_paths: Vec<PathBuf> = Vec::new();
     let mut frames_encoded: u32 = 0;
-    let children = active_children();
-
-    let (crop_w, crop_h) = crate::ffmpeg::render_pipeline::crop_dimensions(
-        config.width, config.height, &config.crop_ratio,
-    );
 
     for (i, chunk) in chunks.iter().enumerate() {
         if is_cancelled(&config.render_id) {
@@ -134,7 +189,6 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
             )
         }
         .map_err(|e| {
-            // Fix 5: cleanup on chunk error / cancellation
             cleanup(&config.render_id, &work_dir);
             e.to_string()
         })?;
@@ -173,7 +227,7 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
     }
 
     cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
-    cmd.arg(&config.output_path);
+    cmd.arg(&output_path_clean);
 
     let mux_id = format!("{}-mux", config.render_id);
     let mux_child = cmd.spawn().map_err(|e| {
@@ -214,7 +268,7 @@ fn render_video_sync(app: tauri::AppHandle, config: RenderConfig) -> Result<Stri
 
     // Fix 6: cleanup on success path too (workdir + cancel flag)
     cleanup(&config.render_id, &work_dir);
-    Ok(config.output_path.clone())
+    Ok(output_path_clean.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
