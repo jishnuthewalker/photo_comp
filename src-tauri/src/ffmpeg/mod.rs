@@ -13,5 +13,5 @@ pub fn ffmpeg_binary(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     let path = app
         .path()
         .resolve(name, tauri::path::BaseDirectory::Resource)?;
-    Ok(path)
+    Ok(dunce::simplified(&path).to_path_buf())
 }

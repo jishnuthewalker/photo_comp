@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [lib]
 name = "photos_compilation_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
