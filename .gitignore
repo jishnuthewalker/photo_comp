@@ -26,3 +26,14 @@ dist-ssr
 # Rust / Tauri
 src-tauri/target/
 src-tauri/gen/
+
+# Superpowers brainstorm artifacts
+.superpowers/
+
+# Linker experiment leftovers
+/.cargo/ld-wrapper/
+/.cargo/ld.lld.exe
+/.cargo/lld-wrapper.*
+
+# FFmpeg binary variants (only -gnu is used; -msvc is a stray hardlink)
+src-tauri/binaries/*-msvc.exe
