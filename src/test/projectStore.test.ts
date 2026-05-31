@@ -5,11 +5,8 @@ import type { Photo } from "../store/types";
 function makePhoto(id: string, overrides?: Partial<Photo>): Photo {
   return {
     id,
-    path: `/photos/${id}.jpg`,
     originalPath: `/photos/${id}.jpg`,
-    thumbnailPath: `/thumbs/${id}.jpg`,
-    width: 1920,
-    height: 1080,
+    thumbPath: `/thumbs/${id}.jpg`,
     ...overrides,
   };
 }
@@ -51,8 +48,8 @@ describe("duplicatePhotos", () => {
     expect(photos).toHaveLength(5);
     expect(photos[0].id).toBe("a");
     expect(photos[1].id).toBe("b");
-    expect(photos[2].path).toBe(a.path);
-    expect(photos[3].path).toBe(b.path);
+    expect(photos[2].originalPath).toBe(a.originalPath);
+    expect(photos[3].originalPath).toBe(b.originalPath);
     expect(photos[4].id).toBe("c");
     expect(photos[2].id).not.toBe("a");
     expect(photos[3].id).not.toBe("b");
@@ -100,7 +97,7 @@ describe("duplicatePhotos", () => {
 
     const photos = useProjectStore.getState().project.photos;
     expect(photos).toHaveLength(3);
-    expect(photos[2].path).toBe(b.path);
+    expect(photos[2].originalPath).toBe(b.originalPath);
     expect(photos[2].id).not.toBe("b");
   });
 });
