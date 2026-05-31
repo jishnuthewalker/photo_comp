@@ -62,6 +62,8 @@ User actions → Zustand store (zundo undo/redo) → React UI
 
 Key project fields: `photos[]`, `bpm`, `firstBeatOffsetMs`, `beatsPerPhoto` (float, e.g. 0.5), `cropRatio`, `alignment`, `scaleMode` ("cover"|"contain"), `globalTransition` ("cut"|"crossfade"|"stack"), `song?`, `outputConfig`.
 
+Key photo actions: `addPhotos`, `removePhoto(id)`, `clearPhotos()`, `reorderPhotos(from, to)`, `setPhotoBeatsOverride(id, beats|undefined)`.
+
 ### Beat timeline (src/lib/cumulativeTimeline.ts)
 
 `buildCumulativeTimeline(photos, bpm, beatsPerPhoto, firstBeatOffsetMs)` → `number[]` of photo start times in seconds. Each photo's duration = `(60/bpm) * (photo.beatsOverride ?? beatsPerPhoto)`. Used by both preview sync (RAF loop) and FFmpeg frame count calculation.
@@ -83,6 +85,18 @@ For "stack", a `stack_{render_id}/` work directory is created beside the output 
 
 All photo paths, the output path, work dir, and ffmpeg binary path are passed through `dunce::simplified()` before being given to FFmpeg to strip `\\?\` prefixes.
 
+### Image import pipeline (src-tauri/src/image/)
+
+`import_images` command (`commands/import.rs`) partitions paths into HEIC and processable in one pass, then offloads to `tauri::async_runtime::spawn_blocking` (keeps UI responsive).
+
+`generate_thumbnails` (`image/thumbnail.rs`) runs across files in parallel via Rayon. Per file:
+1. Compute deterministic thumb path (FNV-1a hash). **Return cached result immediately** if the file already exists on disk (`app_cache_dir/thumbnails/`) — only a header read for dims.
+2. On cache miss: JPEG files use `jpeg-decoder` **shrink-on-load** — `Decoder::scale(w,h)` picks the smallest of {1/8,1/4,1/2,1} ≥ requested, so a 24MP JPEG is decoded at ~1/64 the pixel count. Non-JPEG (PNG/WEBP) falls back to `image::open`.
+3. EXIF orientation (`image/exif.rs`) is applied to the **small decoded buffer**, not the full-res image.
+4. Stored `width/height` = original (unscaled, oriented) dimensions. For orientations 5–8, `w` and `h` are swapped before returning.
+
+HEIC detection and conversion (`image/heic.rs`): ffmpeg converts HEIC → JPEG in parallel (Rayon `par_iter`). Converted files then go through the normal thumbnail path. `libvips`/`turbojpeg` were considered but rejected — both require C/NASM toolchain additions that conflict with the existing fragile mingw setup.
+
 ### Audio engine (src/hooks/useAudioEngine.ts)
 
 Web Audio API. `AudioContext` is created lazily. Uses `isPlayingRef` (mirrors `isPlaying` state) to avoid stale-closure bugs in `seek`, `currentTime`, and `pause` callbacks. Before every `.stop()` call, `source.onended` is set to `null` to prevent the ended handler from firing after a manual stop.
@@ -90,6 +104,10 @@ Web Audio API. `AudioContext` is created lazily. Uses `isPlayingRef` (mirrors `i
 ### Project persistence (src/lib/projectPersistence.ts)
 
 `saveProject` / `loadProject` via `@tauri-apps/plugin-fs` + `@tauri-apps/plugin-dialog`. Validates `schemaVersion === 1` on load. Autosave triggers 1 second after any project change (debounced effect in `App.tsx`).
+
+### Filmstrip (src/components/Filmstrip/)
+
+`Filmstrip.tsx` renders the horizontal strip of photos with DnD reorder (`@dnd-kit`). Strip height is user-resizable via a drag handle at the bottom (70–320px). Each `FilmstripCell` shows a hover-revealed × button to remove that photo individually; a "Clear all" button appears top-right when the strip is non-empty. Cell width is derived from height at 4:3.
 
 ### ExportPanel (src/components/ExportPanel/)
 

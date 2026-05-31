@@ -2,7 +2,7 @@
 
 Desktop app that compiles a sequence of photos into a beat-synced MP4 video. Import photos, set BPM (manual, tap-tempo, or auto-detected), arrange them on a filmstrip, preview with audio, then export.
 
-**Stack:** Tauri 2 · React 18 · TypeScript · Vite · Zustand (+ zundo undo/redo) · Rust · FFmpeg (bundled, BtbN GPL build) · Web Audio API · essentia.js (BPM detection)
+**Stack:** Tauri 2 · React 18 · TypeScript · Vite · Zustand (+ zundo undo/redo) · Rust · FFmpeg (bundled, BtbN GPL build) · Web Audio API · essentia.js (BPM detection) · jpeg-decoder (shrink-on-load thumbnails)
 
 ---
 

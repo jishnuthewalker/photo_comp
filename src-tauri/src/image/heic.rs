@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use rayon::prelude::*;
 
 pub fn detect_heic(path: &Path) -> bool {
     matches!(
@@ -12,7 +13,7 @@ pub fn convert_heic_files(
     output_dir: &Path,
     ffmpeg_path: &Path,
 ) -> Vec<(String, String)> {
-    heic_paths.iter().filter_map(|p| {
+    heic_paths.par_iter().filter_map(|p| {
         let stem = p.file_stem()?.to_string_lossy().into_owned();
         let hash = path_hash(p);
         let out = output_dir.join(format!("{stem}_{hash:x}.jpg"));
