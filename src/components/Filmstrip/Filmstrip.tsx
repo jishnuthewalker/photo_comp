@@ -28,6 +28,8 @@ export function Filmstrip({ activePhotoIndex, onCellClick }: Props) {
   const bpm = useProjectStore((s) => s.project.bpm);
   const beatsPerPhoto = useProjectStore((s) => s.project.beatsPerPhoto);
   const reorderPhotos = useProjectStore((s) => s.reorderPhotos);
+  const removePhoto = useProjectStore((s) => s.removePhoto);
+  const clearPhotos = useProjectStore((s) => s.clearPhotos);
 
   const [height, setHeight] = useState(DEFAULT_H);
   const dragging = useRef(false);
@@ -65,6 +67,26 @@ export function Filmstrip({ activePhotoIndex, onCellClick }: Props) {
 
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
+      {photos.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 12px 0", background: "#161622" }}>
+          <button
+            onClick={() => clearPhotos()}
+            style={{
+              background: "none",
+              border: "1px solid #555",
+              color: "#aaa",
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 3,
+              cursor: "pointer",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#c03030"; (e.currentTarget as HTMLButtonElement).style.color = "#f06060"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#555"; (e.currentTarget as HTMLButtonElement).style.color = "#aaa"; }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={photos.map((p) => p.id)} strategy={horizontalListSortingStrategy}>
           <div
@@ -88,6 +110,7 @@ export function Filmstrip({ activePhotoIndex, onCellClick }: Props) {
                   beatsPerPhoto={beatsPerPhoto}
                   cellW={cellW}
                   cellImgH={cellImgH}
+                  onRemove={() => removePhoto(photo.id)}
                 />
               </div>
             ))}

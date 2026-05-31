@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { assetUrl } from "../../utils/tauriAsset";
@@ -11,11 +12,13 @@ interface Props {
   beatsPerPhoto: number;
   cellW: number;
   cellImgH: number;
+  onRemove: () => void;
 }
 
-export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cellW, cellImgH }: Props) {
+export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cellW, cellImgH, onRemove }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: photo.id });
   const beats = photo.beatsOverride ?? beatsPerPhoto;
+  const [hovered, setHovered] = useState(false);
 
   return (
     <div
@@ -32,6 +35,8 @@ export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cell
         borderRadius: 4,
         overflow: "visible",
       }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       {...attributes}
       {...listeners}
     >
@@ -55,6 +60,33 @@ export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cell
       <div style={{ textAlign: "center", fontSize: 9, color: "#888", marginTop: 2 }}>
         {index + 1}
       </div>
+      {hovered && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          style={{
+            position: "absolute",
+            top: 2,
+            right: 2,
+            width: 18,
+            height: 18,
+            background: "rgba(200,50,50,0.9)",
+            color: "#fff",
+            border: "none",
+            borderRadius: "50%",
+            fontSize: 12,
+            lineHeight: "18px",
+            textAlign: "center",
+            cursor: "pointer",
+            padding: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

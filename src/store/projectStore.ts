@@ -28,6 +28,7 @@ interface ProjectState {
   addPhotos: (photos: Photo[]) => void;
   reorderPhotos: (fromIndex: number, toIndex: number) => void;
   removePhoto: (id: string) => void;
+  clearPhotos: () => void;
   setPhotoBeatsOverride: (id: string, beats: number | undefined) => void;
   setBpm: (bpm: number) => void;
   setFirstBeatOffsetMs: (ms: number) => void;
@@ -64,6 +65,8 @@ export const useProjectStore = create<ProjectState>()(
         }),
       removePhoto: (id) =>
         set((s) => ({ project: touch({ ...s.project, photos: s.project.photos.filter((p) => p.id !== id) }) })),
+      clearPhotos: () =>
+        set((s) => ({ project: touch({ ...s.project, photos: [] }) })),
       setPhotoBeatsOverride: (id, beats) =>
         set((s) => ({
           project: touch({
