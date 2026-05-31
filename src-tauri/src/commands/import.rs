@@ -39,16 +39,21 @@ pub async fn import_images(
 
     let path_bufs: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
 
-    let heic_paths: Vec<String> = path_bufs.iter()
-        .filter(|p| detect_heic(p))
+    // D: single-pass partition into heic / processable
+    let (heic_vec, processable): (Vec<PathBuf>, Vec<PathBuf>) =
+        path_bufs.into_iter().partition(|p| detect_heic(p));
+
+    let heic_paths: Vec<String> = heic_vec
+        .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
 
-    let processable: Vec<PathBuf> = path_bufs.into_iter()
-        .filter(|p| !detect_heic(p))
-        .collect();
-
-    let results = generate_thumbnails(&processable, thumb_size, &thumb_dir);
+    // D: offload CPU/IO onto blocking thread pool (mirrors render.rs)
+    let results = tauri::async_runtime::spawn_blocking(move || {
+        generate_thumbnails(&processable, thumb_size, &thumb_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     let photos = results.into_iter().map(|r| PhotoMeta {
         original_path: r.original_path,
