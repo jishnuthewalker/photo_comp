@@ -221,7 +221,7 @@ export async function analyzeDuplicates(photos: Photo[]): Promise<DuplicateRepor
       const distinct = [...new Set(group.map((e) => e.path))];
       if (distinct.length > 1) {
         const photoGroup = group
-          .map((e) => photos.find((p) => p.originalPath === e.id)!)
+          .map((e) => photos.find((p) => p.originalPath === e.path)!)
           .filter(Boolean);
         groups.push({ type: "content", photos: photoGroup });
         contentDuplicateCount += group.length - 1;

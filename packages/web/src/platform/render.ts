@@ -113,8 +113,11 @@ export async function renderVideo(
   let cursor = 0;
   for (let i = 0; i < photos.length; i++) {
     startFrames[i] = cursor;
-    cursor +=
-      frameCounts[i] - (i < photos.length - 1 ? fade_frames : 0);
+    // Clamp segment advance to at least 1 frame so cursor always moves forward
+    const advance = i < photos.length - 1
+      ? Math.max(1, frameCounts[i] - fade_frames)
+      : frameCounts[i];
+    cursor += advance;
   }
   const totalOutputFrames =
     transition === "crossfade"
@@ -220,7 +223,7 @@ export async function renderVideo(
       if (f >= nextStart) {
         inTransition = true;
         nextPhotoIdx = photoIdx + 1;
-        transitionAlpha = (f - nextStart) / fade_frames;
+        transitionAlpha = Math.min(1, Math.max(0, (f - nextStart) / fade_frames));
       }
     }
 
