@@ -2,8 +2,16 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "@framecut/shared/App";
 import "@framecut/shared/style.css";
+import { setPlatform } from "@framecut/shared/lib/platform";
+import { tauriPlatform } from "./platform";
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: string | null }> {
+// Inject Tauri platform BEFORE any React render (platform() is called during rendering)
+setPlatform(tauriPlatform);
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: string | null }
+> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
     this.state = { error: null };
@@ -14,8 +22,18 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: 24, fontFamily: "monospace", background: "#fff", color: "#c00", whiteSpace: "pre-wrap" }}>
-          <b>React Error:</b>{"\n"}{this.state.error}
+        <div
+          style={{
+            padding: 24,
+            fontFamily: "monospace",
+            background: "#fff",
+            color: "#c00",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <b>React Error:</b>
+          {"\n"}
+          {this.state.error}
         </div>
       );
     }
