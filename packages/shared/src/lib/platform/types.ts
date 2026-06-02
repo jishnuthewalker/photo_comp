@@ -165,6 +165,13 @@ export interface Platform {
   ): Promise<RenderResult>;
 
   /**
+   * Cancel an in-progress render by its render ID.
+   * Desktop: kills the active FFmpeg subprocess(es) for this render.
+   * Web: signals the render worker to abort.
+   */
+  cancelRender(renderId: string): Promise<void>;
+
+  /**
    * Reveal the rendered output to the user.
    * Desktop: calls revealItemInDir on the output file (opens file manager).
    * Web: no-op (download is already triggered inline by the browser).

@@ -1,70 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FixedSizeGrid } from "react-window";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { nanoid } from "nanoid";
 import { PhotoGridCell } from "./PhotoGridCell";
 import { useProjectStore } from "../../store/projectStore";
-
-interface ImportedPhoto {
-  originalPath: string;
-  thumbPath: string;
-  width: number;
-  height: number;
-}
-
-interface ImportResult {
-  photos: ImportedPhoto[];
-  heicPaths: string[];
-}
+import { platform } from "../../lib/platform";
+import type { PhotoMeta, PickedFile } from "../../lib/platform";
 
 interface Props {
   onClose: () => void;
+  initialFiles?: PickedFile[]; // pre-supplied files (e.g. from drag-drop)
 }
 
 const CELL_SIZE = 120;
 const COLUMNS = 4;
 
-export function PhotoGrid({ onClose }: Props) {
+export function PhotoGrid({ onClose, initialFiles }: Props) {
   const addPhotos = useProjectStore((s) => s.addPhotos);
-  const [photos, setPhotos] = useState<ImportedPhoto[]>([]);
+  const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [heicPending, setHeicPending] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  const handleImport = async () => {
-    const result = await open({ multiple: true, filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "heic", "heif"] }] });
-    if (!result) return;
-    const paths = Array.isArray(result) ? result : [result];
+  const doImport = async (files: PickedFile[]) => {
     setLoading(true);
     setImportError(null);
     try {
-      const importResult = await invoke<ImportResult>("import_images", { paths, thumbSize: 240 });
-      if (importResult.heicPaths.length > 0) {
-        setHeicPending(importResult.heicPaths);
-      }
-      setPhotos(importResult.photos);
-      setSelected(new Set(importResult.photos.map((_, i) => i)));
-    } catch (err) {
-      setImportError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConvertHeic = async () => {
-    setLoading(true);
-    setImportError(null);
-    try {
-      const converted = await invoke<string[]>("convert_heic", { heicPaths: heicPending });
-      setHeicPending([]);
-      const importResult = await invoke<ImportResult>("import_images", { paths: converted, thumbSize: 240 });
+      const metas = await platform().importImages(files, (done, total) => {
+        // progress available if needed
+      });
       setPhotos((prev) => {
-        const updated = [...prev, ...importResult.photos];
+        const updated = [...prev, ...metas];
         setSelected((prevSel) => {
           const next = new Set(prevSel);
-          importResult.photos.forEach((_, i) => next.add(prev.length + i));
+          metas.forEach((_, i) => next.add(prev.length + i));
           return next;
         });
         return updated;
@@ -75,6 +43,20 @@ export function PhotoGrid({ onClose }: Props) {
       setLoading(false);
     }
   };
+
+  const handleImport = async () => {
+    const files = await platform().pickImageFiles();
+    if (files.length === 0) return;
+    await doImport(files);
+  };
+
+  // Run initial import if files were pre-supplied (drag-drop)
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0) {
+      doImport(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleSelect = (i: number) =>
     setSelected((prev) => {
@@ -104,15 +86,6 @@ export function PhotoGrid({ onClose }: Props) {
           <h2 style={{ margin: 0, color: "#fff" }}>Import Photos</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer" }}>×</button>
         </div>
-
-        {heicPending.length > 0 && (
-          <div style={{ background: "#2a1a0e", border: "1px solid #a06030", borderRadius: 4, padding: 12, color: "#f0a060" }}>
-            {heicPending.length} photos are HEIC format. Convert to JPEG for compatibility?
-            <button onClick={handleConvertHeic} style={{ marginLeft: 12, padding: "4px 12px", background: "#a06030", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
-              Convert
-            </button>
-          </div>
-        )}
 
         {importError && (
           <div style={{ background: "#2a0e0e", border: "1px solid #a03030", borderRadius: 4, padding: 12, color: "#f06060", fontSize: 13 }}>

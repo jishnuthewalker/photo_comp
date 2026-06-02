@@ -1,11 +1,8 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
-import { listen } from "@tauri-apps/api/event";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { nanoid } from "nanoid";
 import { useProjectStore } from "../../store/projectStore";
 import { buildCumulativeTimeline, buildFrameCounts } from "../../lib/cumulativeTimeline";
+import { platform } from "../../lib/platform";
 import type { RenderProgress } from "../../store/types";
 
 export function ExportPanel() {
@@ -16,13 +13,7 @@ export function ExportPanel() {
   const [error, setError] = useState<string | null>(null);
   const [renderId, setRenderId] = useState<string | null>(null);
 
-  const resolutionMap = { "720p": [1280, 720], "1080p": [1920, 1080], "4k": [3840, 2160] } as const;
-  const [width, height] = resolutionMap[project.outputConfig.resolution];
-
   const handleRender = async () => {
-    const outputPath = await save({ filters: [{ name: "MP4 Video", extensions: ["mp4"] }] });
-    if (!outputPath) return;
-
     setError(null);
     setRendering(true);
     const id = nanoid();
@@ -45,40 +36,35 @@ export function ExportPanel() {
     const lastBeats = project.photos[project.photos.length - 1]?.beatsOverride ?? project.beatsPerPhoto;
     const totalDuration = lastTime + (60 / project.bpm) * lastBeats - project.firstBeatOffsetMs / 1000;
 
-    const unlisten = await listen<RenderProgress>("render_progress", (e) => setProgress(e.payload));
-
     try {
-      const result = await invoke<string>("render_video", {
-        config: {
+      const result = await platform().renderVideo(
+        {
           renderId: id,
-          outputPath,
-          photos: project.photos.map((p, i) => ({ path: p.originalPath, frameCount: frameCounts[i] })),
-          fps: project.outputConfig.fps,
-          width,
-          height,
-          cropRatio: project.cropRatio,
-          transition: project.globalTransition,
-          songPath: project.song?.path ?? null,
+          photos: project.photos,
+          bpm: project.bpm,
           firstBeatOffsetMs: project.firstBeatOffsetMs,
+          beatsPerPhoto: project.beatsPerPhoto,
+          transition: project.globalTransition,
+          cropRatio: project.cropRatio,
+          scaleMode: project.scaleMode,
+          resolution: project.outputConfig.resolution,
+          fps: project.outputConfig.fps,
+          songRef: project.song ? { ref: project.song.path, durationMs: project.song.durationMs } : undefined,
           totalDurationS: totalDuration,
         },
-      });
-      try {
-        await revealItemInDir(result);
-      } catch {
-        // reveal not supported on this platform — ignore
-      }
+        (p) => setProgress(p)
+      );
+      await platform().revealOutput(result);
     } catch (e) {
       setError(String(e));
     } finally {
       setRendering(false);
       setProgress(null);
-      unlisten();
     }
   };
 
   const handleCancel = async () => {
-    if (renderId) await invoke("cancel_render", { renderId });
+    if (renderId) await platform().cancelRender(renderId);
     setRendering(false);
     setProgress(null);
   };

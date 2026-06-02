@@ -32,3 +32,5 @@ export type {
   RenderRequest,
   RenderResult,
 } from "./types";
+
+export type { PhotoMeta } from "../../store/types";

@@ -1,6 +1,5 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { platform } from "../lib/platform";
 
-/** Convert a local filesystem path to a tauri asset:// URL for use in <img> src */
-export function assetUrl(filePath: string): string {
-  return convertFileSrc(filePath);
+export function assetUrl(path: string): string {
+  return platform().assetUrl(path);
 }

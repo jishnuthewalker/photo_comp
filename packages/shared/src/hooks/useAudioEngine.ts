@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState } from "react";
 
 export interface AudioEngine {
-  load: (filePath: string) => Promise<number>; // returns durationMs
+  load: (bytes: ArrayBuffer) => Promise<number>; // returns durationMs
   play: (fromSeconds?: number) => void;
   pause: () => void;
   seek: (toSeconds: number) => void;
@@ -29,18 +29,13 @@ export function useAudioEngine(): AudioEngine {
     return contextRef.current;
   }, []);
 
-  const load = useCallback(async (filePath: string): Promise<number> => {
+  const load = useCallback(async (bytes: ArrayBuffer): Promise<number> => {
     const ctx = getContext();
-    // Tauri asset protocol for local files
-    const { convertFileSrc } = await import("@tauri-apps/api/core");
-    const url = convertFileSrc(filePath);
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    const decoded = await ctx.decodeAudioData(arrayBuffer);
+    const decoded = await ctx.decodeAudioData(bytes.slice(0));
     bufferRef.current = decoded;
     setAudioBuffer(decoded);
     setDuration(decoded.duration);
-    return decoded.duration * 1000; // return durationMs directly — don't read React state
+    return decoded.duration * 1000;
   }, [getContext]);
 
   const play = useCallback((fromSeconds = 0) => {

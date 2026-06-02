@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useProjectStore } from "../../store/projectStore";
 import { tapTempoMedian } from "../../lib/tapTempo";
+import { platform } from "../../lib/platform";
 import type { AudioEngine } from "../../hooks/useAudioEngine";
 
 interface Props {
@@ -39,10 +39,12 @@ export function BpmControls({ audioEngine }: Props) {
   };
 
   const handleImportSong = async () => {
-    const path = await open({ filters: [{ name: "Audio", extensions: ["mp3", "aac", "wav", "flac", "m4a"] }] });
-    if (!path || Array.isArray(path)) return;
-    const durationMs = await audioEngine.load(path);
-    setSong({ path, durationMs });
+    const picked = await platform().pickSongFile();
+    if (!picked) return;
+    const ref = picked.kind === "path" ? picked.path : picked.name;
+    const bytes = await platform().loadAudio({ ref, durationMs: 0 });
+    const durationMs = await audioEngine.load(bytes);
+    setSong({ path: ref, durationMs });
   };
 
   const handleTap = useCallback(() => {
