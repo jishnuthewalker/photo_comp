@@ -1,7 +1,8 @@
 import { useRef, useEffect } from "react";
-import { assetUrl } from "../../utils/tauriAsset";
+import { platform } from "../../lib/platform";
 import { useProjectStore } from "../../store/projectStore";
 import type { Photo } from "../../store/types";
+import { drawPhotoFrame } from "../../lib/frameDraw";
 
 const RATIO_MAP: Record<string, [number, number]> = {
   "16:9": [16, 9],
@@ -38,22 +39,12 @@ export function PreviewCanvas({ photos, activeIndex }: Props) {
     if (!photo) return;
 
     const drawImg = (img: HTMLImageElement) => {
-      if (globalTransition !== "stack") {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-      let scale: number;
-      if (scaleMode === "cover") {
-        scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-      } else {
-        scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-      }
-      const sw = img.width * scale;
-      const sh = img.height * scale;
-      const sx = (canvas.width - sw) / 2;
-      const sy = (canvas.height - sh) / 2;
-      ctx.drawImage(img, sx, sy, sw, sh);
+      drawPhotoFrame(ctx, img, {
+        canvasW: canvas.width,
+        canvasH: canvas.height,
+        scaleMode,
+        transition: globalTransition,
+      });
     };
 
     const cached = imgCacheRef.current.get(photo.thumbPath);
@@ -61,7 +52,7 @@ export function PreviewCanvas({ photos, activeIndex }: Props) {
       drawImg(cached);
     } else {
       const img = new Image();
-      img.src = assetUrl(photo.thumbPath);
+      img.src = platform().assetUrl(photo.thumbPath);
       img.onload = () => {
         imgCacheRef.current.set(photo.thumbPath, img);
         drawImg(img);
