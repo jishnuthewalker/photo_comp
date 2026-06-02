@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "identifier": "com.photoscompilation.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev -w @framecut/desktop",
+    "beforeBuildCommand": "npm run build -w @framecut/desktop",
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../dist"
+    "frontendDist": "../packages/desktop/dist"
   },
   "app": {
     "windows": [

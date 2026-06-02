@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@framecut/shared": ["../shared/src"],
+      "@framecut/shared/*": ["../shared/src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "../shared" }]
+}
