@@ -30,6 +30,9 @@ src-tauri/gen/
 # Superpowers brainstorm artifacts
 .superpowers/
 
+# Git worktrees
+.worktrees/
+
 # Linker experiment leftovers
 /.cargo/ld-wrapper/
 /.cargo/ld.lld.exe
