@@ -41,6 +41,21 @@ interface ProjectState {
   setOutputConfig: (config: OutputConfig) => void;
   setName: (name: string) => void;
   loadProject: (project: Project) => void;
+
+  // Selection (outside `project`, excluded from undo)
+  selectedPhotoIds: Set<string>;
+  selectionAnchorId: string | null;
+  setSelection: (ids: string[]) => void;
+  toggleSelection: (id: string) => void;
+  selectRange: (toIndex: number) => void;
+  clearSelection: () => void;
+  setSelectionAnchor: (id: string | null) => void;
+
+  // New bulk photo actions
+  reorderPhotosMulti: (ids: string[], toIndex: number) => void;
+  removePhotos: (ids: string[]) => void;
+  setPhotosBeatsOverride: (ids: string[], beats: number | undefined) => void;
+  duplicatePhotos: (ids: string[]) => void;
 }
 
 function touch(project: Project): Project {
@@ -52,7 +67,15 @@ export const useProjectStore = create<ProjectState>()(
     (set) => ({
       project: defaultProject(),
 
-      setPhotos: (photos) => set((s) => ({ project: touch({ ...s.project, photos }) })),
+      selectedPhotoIds: new Set<string>(),
+      selectionAnchorId: null,
+
+      setPhotos: (photos) =>
+        set((s) => ({
+          project: touch({ ...s.project, photos }),
+          selectedPhotoIds: new Set<string>(),
+          selectionAnchorId: null,
+        })),
       addPhotos: (photos) =>
         set((s) => ({ project: touch({ ...s.project, photos: [...s.project.photos, ...photos] }) })),
       reorderPhotos: (fromIndex, toIndex) =>
@@ -63,10 +86,49 @@ export const useProjectStore = create<ProjectState>()(
           photos.splice(toIndex, 0, moved);
           return { project: touch({ ...s.project, photos }) };
         }),
+      reorderPhotosMulti: (ids, toIndex) =>
+        set((s) => {
+          const photos = s.project.photos;
+          const idSet = new Set(ids);
+          const moved = photos.filter((p) => idSet.has(p.id));
+          if (moved.length === 0) return {};
+          const remaining = photos.filter((p) => !idSet.has(p.id));
+          const targetId = photos[toIndex]?.id;
+          let insertAt: number;
+          if (targetId === undefined || idSet.has(targetId)) {
+            insertAt = photos.slice(0, toIndex).filter((p) => !idSet.has(p.id)).length;
+          } else {
+            const targetIdxInRemaining = remaining.findIndex((p) => p.id === targetId);
+            const firstMovedOrigIdx = photos.findIndex((p) => idSet.has(p.id));
+            insertAt = firstMovedOrigIdx < toIndex ? targetIdxInRemaining + 1 : targetIdxInRemaining;
+          }
+          const next = [...remaining];
+          next.splice(insertAt, 0, ...moved);
+          return { project: touch({ ...s.project, photos: next }) };
+        }),
       removePhoto: (id) =>
-        set((s) => ({ project: touch({ ...s.project, photos: s.project.photos.filter((p) => p.id !== id) }) })),
+        set((s) => {
+          const photos = s.project.photos.filter((p) => p.id !== id);
+          const sel = new Set(s.selectedPhotoIds);
+          sel.delete(id);
+          const anchorId = s.selectionAnchorId === id ? null : s.selectionAnchorId;
+          return { project: touch({ ...s.project, photos }), selectedPhotoIds: sel, selectionAnchorId: anchorId };
+        }),
+      removePhotos: (ids) =>
+        set((s) => {
+          const idSet = new Set(ids);
+          const photos = s.project.photos.filter((p) => !idSet.has(p.id));
+          const sel = new Set(s.selectedPhotoIds);
+          ids.forEach((id) => sel.delete(id));
+          const anchorId = s.selectionAnchorId && idSet.has(s.selectionAnchorId) ? null : s.selectionAnchorId;
+          return { project: touch({ ...s.project, photos }), selectedPhotoIds: sel, selectionAnchorId: anchorId };
+        }),
       clearPhotos: () =>
-        set((s) => ({ project: touch({ ...s.project, photos: [] }) })),
+        set((s) => ({
+          project: touch({ ...s.project, photos: [] }),
+          selectedPhotoIds: new Set<string>(),
+          selectionAnchorId: null,
+        })),
       setPhotoBeatsOverride: (id, beats) =>
         set((s) => ({
           project: touch({
@@ -83,6 +145,43 @@ export const useProjectStore = create<ProjectState>()(
             }),
           }),
         })),
+      setPhotosBeatsOverride: (ids, beats) =>
+        set((s) => {
+          const idSet = new Set(ids);
+          const photos = s.project.photos.map((p) => {
+            if (!idSet.has(p.id)) return p;
+            const updated = { ...p };
+            if (beats === undefined) {
+              delete updated.beatsOverride;
+            } else {
+              updated.beatsOverride = beats;
+            }
+            return updated;
+          });
+          return { project: touch({ ...s.project, photos }) };
+        }),
+      duplicatePhotos: (ids) =>
+        set((s) => {
+          if (ids.length === 0) return {};
+          const idSet = new Set(ids);
+          const photos = s.project.photos;
+          const rightmostIndex = photos.reduce(
+            (max, p, i) => (idSet.has(p.id) ? Math.max(max, i) : max),
+            -1
+          );
+          if (rightmostIndex === -1) return {};
+          const copies = photos
+            .filter((p) => idSet.has(p.id))
+            .map((p) => ({ ...p, id: nanoid() }));
+          const next = [...photos];
+          next.splice(rightmostIndex + 1, 0, ...copies);
+          const newIds = copies.map((c) => c.id);
+          return {
+            project: touch({ ...s.project, photos: next }),
+            selectedPhotoIds: new Set(newIds),
+            selectionAnchorId: newIds[newIds.length - 1] ?? null,
+          };
+        }),
       setBpm: (bpm) => set((s) => ({ project: touch({ ...s.project, bpm }) })),
       setFirstBeatOffsetMs: (firstBeatOffsetMs) =>
         set((s) => ({ project: touch({ ...s.project, firstBeatOffsetMs }) })),
@@ -98,10 +197,42 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({ project: touch({ ...s.project, outputConfig }) })),
       setName: (name) => set((s) => ({ project: touch({ ...s.project, name }) })),
       loadProject: (project) => {
-        set({ project });
+        set({
+          project,
+          selectedPhotoIds: new Set<string>(),
+          selectionAnchorId: null,
+        });
         // clear undo history so user can't undo back to previous project
         setTimeout(() => useProjectStore.temporal.getState().clear(), 0);
       },
+
+      setSelection: (ids) => set({ selectedPhotoIds: new Set(ids) }),
+
+      toggleSelection: (id) =>
+        set((s) => {
+          const next = new Set(s.selectedPhotoIds);
+          next.has(id) ? next.delete(id) : next.add(id);
+          return { selectedPhotoIds: next };
+        }),
+
+      selectRange: (toIndex) =>
+        set((s) => {
+          const photos = s.project.photos;
+          const anchorIndex = s.selectionAnchorId
+            ? photos.findIndex((p) => p.id === s.selectionAnchorId)
+            : -1;
+          if (anchorIndex === -1) {
+            const id = photos[toIndex]?.id;
+            return id ? { selectedPhotoIds: new Set([id]), selectionAnchorId: id } : {};
+          }
+          const lo = Math.min(anchorIndex, toIndex);
+          const hi = Math.max(anchorIndex, toIndex);
+          return { selectedPhotoIds: new Set(photos.slice(lo, hi + 1).map((p) => p.id)) };
+        }),
+
+      clearSelection: () => set({ selectedPhotoIds: new Set<string>(), selectionAnchorId: null }),
+
+      setSelectionAnchor: (id) => set({ selectionAnchorId: id }),
     }),
     {
       // Track undo for meaningful state changes only
