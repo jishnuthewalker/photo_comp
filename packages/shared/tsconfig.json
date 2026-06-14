@@ -8,5 +8,6 @@
     "outDir": "./dist",
     "types": ["vitest/globals"]
   },
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src", "vitest.config.ts"],
+  "exclude": ["src/test"]
 }
