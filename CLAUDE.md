@@ -4,30 +4,56 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**PhotosCompilation** — Tauri 2 desktop app that compiles photos into beat-synced MP4 videos. React/TypeScript frontend, Rust backend, FFmpeg for video encoding.
+**Framecut** — Beat-synced photo-to-video editor. Primary runtime is a browser web app; a legacy Tauri 2 desktop wrapper retains the Rust/FFmpeg export pipeline for Windows.
+
+## Monorepo structure
+
+```
+packages/
+  shared/     — React UI, Zustand store, platform abstraction, shared logic
+  web/        — Browser app (Vite, port 1421). Deployed to Vercel.
+  desktop/    — Tauri wrapper. Wires Tauri backend into the shared UI.
+src-tauri/    — Rust backend (FFmpeg render, image import, HEIC conversion)
+```
 
 ## Commands
 
 ```bash
-# Dev (launches Tauri window + Vite HMR)
+# Web app (primary dev target)
+npm run dev --workspace=packages/web      # localhost:1421
+
+# Desktop app (Tauri + Vite)
 npm run tauri dev
 
-# Frontend only (Vite at localhost:1420)
-npm run dev
+# Type check all packages
+npx tsc -b packages/web/tsconfig.json
 
-# TypeScript check + production bundle
-npm run build
-
-# Rust only (faster iteration on backend changes)
+# Rust only
 cd src-tauri && cargo build --target x86_64-pc-windows-gnu
 
-# Type check only
-npx tsc --noEmit
+# Tests
+npx vitest run
 ```
 
-## Windows Build Setup (Critical)
+## Platform abstraction
 
-This repo has a non-standard linker setup to avoid GNU ld's 65535 DLL-export ordinal overflow.
+All platform-specific code is behind `platform()` from `packages/shared/src/lib/platform/index.ts`. Components never call Tauri directly.
+
+```
+platform().importPhotos()     — file picker + thumbnail generation
+platform().loadSong()         — audio file picker, returns blob URL or file path
+platform().saveProject()      — download (web) or fs write (desktop)
+platform().loadProject()      — upload (web) or fs read (desktop)
+platform().renderVideo()      — mediabunny WebCodecs (web) or FFmpeg (desktop)
+platform().assetUrl(path)     — blob URL (web) or convertFileSrc (desktop)
+```
+
+Web implementation: `packages/web/src/platform/`
+Desktop implementation: `packages/desktop/src/platform/`
+
+## Windows Build Setup (desktop only)
+
+Non-standard linker setup to avoid GNU ld's 65535 DLL-export ordinal overflow.
 
 **`.cargo/config.toml`** forces the GNU target and uses WinLibs GCC as linker:
 ```toml
@@ -38,87 +64,76 @@ target = "x86_64-pc-windows-gnu"
 linker = "C:\\mingw64\\bin\\x86_64-w64-mingw32-gcc.exe"
 ```
 
-`C:\mingw64` is a directory junction pointing to the WinGet-installed WinLibs MinGW64. The Cargo.toml `crate-type` for the lib is `["staticlib", "rlib"]` — **no cdylib** — to avoid the 65535 export limit.
+`C:\mingw64` is a directory junction pointing to the WinGet-installed WinLibs MinGW64. The Cargo.toml `crate-type` is `["staticlib", "rlib"]` — **no cdylib** — to avoid the 65535 export limit.
 
-**FFmpeg binary**: `src-tauri/binaries/ffmpeg-x86_64-pc-windows-gnu.exe` (GPL build, ~194MB). The MSVC-named copy is a hard link to the same file (required by Tauri's build check). In dev mode, Tauri resolves `BaseDirectory::Resource` to `target/x86_64-pc-windows-gnu/debug/`, so `target/x86_64-pc-windows-gnu/debug/binaries/ffmpeg-x86_64-pc-windows-gnu.exe` must exist. All paths passed to FFmpeg are stripped of `\\?\` prefixes via `dunce::simplified`.
+**FFmpeg binary**: `src-tauri/binaries/ffmpeg-x86_64-pc-windows-gnu.exe` (GPL, ~194MB). MSVC-named copy is a hard link required by Tauri's build check. In dev mode, Tauri resolves `BaseDirectory::Resource` to `target/x86_64-pc-windows-gnu/debug/`, so `target/x86_64-pc-windows-gnu/debug/binaries/ffmpeg-x86_64-pc-windows-gnu.exe` must exist. All paths passed to FFmpeg are stripped of `\\?\` prefixes via `dunce::simplified`.
 
 ## Architecture
 
-### Data flow
+### State (`packages/shared/src/store/projectStore.ts`)
 
-```
-User actions → Zustand store (zundo undo/redo) → React UI
-                    ↓ (on export)
-           invoke("render_video") → Rust
-                    ↓
-           FFmpeg subprocess (chunked, cancellable)
-                    ↓
-           Progress events → frontend
-```
-
-### State (src/store/)
-
-`projectStore.ts` — single Zustand store wrapped in `zundo temporal()` for undo/redo. The equality check ignores `lastModified` to avoid spurious history entries. Undo history is cleared on project load.
+Single Zustand store wrapped in `zundo temporal()` for undo/redo. Equality check ignores `lastModified`. Undo history cleared on project load.
 
 Key project fields: `photos[]`, `bpm`, `firstBeatOffsetMs`, `beatsPerPhoto` (float, e.g. 0.5), `cropRatio`, `alignment`, `scaleMode` ("cover"|"contain"), `globalTransition` ("cut"|"crossfade"|"stack"), `song?`, `outputConfig`.
 
-Key photo actions: `addPhotos`, `removePhoto(id)`, `clearPhotos()`, `reorderPhotos(from, to)`, `setPhotoBeatsOverride(id, beats|undefined)`.
+Selection is outside `project` (excluded from undo): `selectedPhotoIds: Set<string>`, `selectionAnchorId`.
 
-### Beat timeline (src/lib/cumulativeTimeline.ts)
+Key photo actions: `addPhotos`, `removePhoto(id)`, `removePhotos(ids[])`, `clearPhotos()`, `reorderPhotos(from, to)`, `reorderPhotosMulti(ids[], toIndex)`, `duplicatePhotos(ids[])`, `setPhotoBeatsOverride(id, beats|undefined)`, `setPhotosBeatsOverride(ids[], beats|undefined)`.
 
-`buildCumulativeTimeline(photos, bpm, beatsPerPhoto, firstBeatOffsetMs)` → `number[]` of photo start times in seconds. Each photo's duration = `(60/bpm) * (photo.beatsOverride ?? beatsPerPhoto)`. Used by both preview sync (RAF loop) and FFmpeg frame count calculation.
+### Beat timeline (`packages/shared/src/lib/cumulativeTimeline.ts`)
 
-### Preview sync (src/hooks/usePreviewSync.ts)
+`buildCumulativeTimeline(photos, bpm, beatsPerPhoto, firstBeatOffsetMs)` → `number[]` of photo start times in seconds. `buildFrameCounts(...)` → `number[]` of frame counts per photo. Used by preview sync and both render backends.
 
-RAF loop calls `audioEngine.currentTime()`, binary-searches the cumulative timeline, updates active photo index. When audio passes `totalEnd` (last photo's beat end), it loops back to `firstBeatOffsetMs/1000`.
+### Preview sync (`packages/shared/src/hooks/usePreviewSync.ts`)
 
-### Render pipeline (src-tauri/src/ffmpeg/render_pipeline.rs)
+RAF loop calls `audioEngine.currentTime()`, binary-searches the cumulative timeline, updates active photo index. Loops back to `firstBeatOffsetMs/1000` when audio passes `totalEnd`.
 
-Photos are batched in chunks of 50 (`CHUNK_SIZE`). Each chunk renders to a `.mp4` via FFmpeg `-filter_complex` + `concat`. Chunks are then concatenated with optional audio mux. Cancel support: `ACTIVE_CHILDREN` registry allows `kill()` of in-flight FFmpeg subprocesses. `CANCEL_FLAGS` tracks cancellation state.
+### Web render pipeline (`packages/web/src/platform/render.ts`)
 
-Transition dispatch in `render.rs`:
-- `"cut"` / default → `render_chunk` (scale+concat filter)
-- `"crossfade"` → `render_chunk_crossfade` (xfade dissolve)
-- `"stack"` → `render_stack` (sequential composition: composites each photo onto accumulated PNG, renders each as a segment, then concatenates)
+Uses `mediabunny` (WebCodecs MP4 encoder). Per-frame `drawPhotoFrame` onto `OffscreenCanvas` → `CanvasSource`. Audio sliced from IDB-stored blob via `AudioBufferSource`. Cancellable via `cancelFlags` Map.
 
-For "stack", a `stack_{render_id}/` work directory is created beside the output file and cleaned up after. Uses `run_ffmpeg_blocking()` (blocking, stderr-capturing) for intermediate steps.
+### Desktop render pipeline (`src-tauri/src/ffmpeg/render_pipeline.rs`)
 
-All photo paths, the output path, work dir, and ffmpeg binary path are passed through `dunce::simplified()` before being given to FFmpeg to strip `\\?\` prefixes.
+Photos batched in chunks of 50. Each chunk → `.mp4` via FFmpeg `-filter_complex` + `concat`. Chunks concatenated with optional audio mux. Cancel via `ACTIVE_CHILDREN` kill registry.
 
-### Image import pipeline (src-tauri/src/image/)
+Transition dispatch: `"cut"` → `render_chunk`, `"crossfade"` → `render_chunk_crossfade` (xfade dissolve), `"stack"` → `render_stack` (PNG compositing).
 
-`import_images` command (`commands/import.rs`) partitions paths into HEIC and processable in one pass, then offloads to `tauri::async_runtime::spawn_blocking` (keeps UI responsive).
+### Browser import (`packages/web/src/platform/import.ts` + `packages/shared/src/lib/browserPhotoImport.ts`)
 
-`generate_thumbnails` (`image/thumbnail.rs`) runs across files in parallel via Rayon. Per file:
-1. Compute deterministic thumb path (FNV-1a hash). **Return cached result immediately** if the file already exists on disk (`app_cache_dir/thumbnails/`) — only a header read for dims.
-2. On cache miss: JPEG files use `jpeg-decoder` **shrink-on-load** — `Decoder::scale(w,h)` picks the smallest of {1/8,1/4,1/2,1} ≥ requested, so a 24MP JPEG is decoded at ~1/64 the pixel count. Non-JPEG (PNG/WEBP) falls back to `image::open`.
-3. EXIF orientation (`image/exif.rs`) is applied to the **small decoded buffer**, not the full-res image.
-4. Stored `width/height` = original (unscaled, oriented) dimensions. For orientations 5–8, `w` and `h` are swapped before returning.
+Web Worker (`packages/shared/src/workers/photoImport.worker.ts`) processes files in batches of 8. JPEG shrink-on-load via `jpeg-decoder` equivalent in browser. Thumbnails stored as blob URLs; originals stored in IndexedDB (`packages/web/src/platform/idb.ts`).
 
-HEIC detection and conversion (`image/heic.rs`): ffmpeg converts HEIC → JPEG in parallel (Rayon `par_iter`). Converted files then go through the normal thumbnail path. `libvips`/`turbojpeg` were considered but rejected — both require C/NASM toolchain additions that conflict with the existing fragile mingw setup.
+### Desktop import pipeline (`src-tauri/src/image/`)
 
-### Audio engine (src/hooks/useAudioEngine.ts)
+Rayon parallel thumbnail generation with FNV-1a hash cache. JPEG shrink-on-load, EXIF orientation applied to small buffer. HEIC → JPEG via FFmpeg.
 
-Web Audio API. `AudioContext` is created lazily. Uses `isPlayingRef` (mirrors `isPlaying` state) to avoid stale-closure bugs in `seek`, `currentTime`, and `pause` callbacks. Before every `.stop()` call, `source.onended` is set to `null` to prevent the ended handler from firing after a manual stop.
+### Audio engine (`packages/shared/src/hooks/useAudioEngine.ts`)
 
-### Project persistence (src/lib/projectPersistence.ts)
+Web Audio API. Lazy `AudioContext`. `isPlayingRef` mirrors `isPlaying` state to avoid stale-closure bugs. `source.onended = null` before every `.stop()` to suppress spurious ended events.
 
-`saveProject` / `loadProject` via `@tauri-apps/plugin-fs` + `@tauri-apps/plugin-dialog`. Validates `schemaVersion === 1` on load. Autosave triggers 1 second after any project change (debounced effect in `App.tsx`).
+### BPM detection (`packages/shared/src/lib/bpmDetector.ts`)
 
-### Filmstrip (src/components/Filmstrip/)
+Uses `music-tempo` (pure JS, no WASM). Lazy-loaded on first Auto BPM click. `new MusicTempo(channelData, { sampleRate })` → `.tempo` (BPM), `.beats` (beat times array).
 
-`Filmstrip.tsx` renders the horizontal strip of photos with DnD reorder (`@dnd-kit`). Strip height is user-resizable via a drag handle at the bottom (70–320px). Each `FilmstripCell` shows a hover-revealed × button to remove that photo individually; a "Clear all" button appears top-right when the strip is non-empty. Cell width is derived from height at 4:3.
+### Project persistence
 
-### ExportPanel (src/components/ExportPanel/)
+Web: `platform().saveProject()` triggers browser download; `platform().loadProject()` uploads JSON.
+Desktop: `@tauri-apps/plugin-fs` reads/writes. Both validate `schemaVersion === 1`.
+Autosave: 1s debounce after any project change in `App.tsx`.
 
-Invokes `render_video` with a config object including: `photos` (path + frameCount), `bpm`, `firstBeatOffsetMs`, `transition`, `cropRatio`, `scaleMode`, `width/height` (from resolution), `fps`, `totalDurationS`, `outputPath`, `songPath`, `renderId` (nanoid). After success, calls `revealItemInDir` on the output file.
+### Filmstrip (`packages/shared/src/components/Filmstrip/`)
+
+DnD reorder (`@dnd-kit`). Height resizable 70–320px. Multi-select: Shift+click range, Ctrl+click toggle. Ctrl+D duplicates selection. Context menu: duplicate, remove, arrange by filename, analyze duplicates, bulk beats override. Touch mode checkbox selection.
+
+### Vercel deployment
+
+`vercel.json` builds `@framecut/web` from `packages/web/dist`. Build command: `npm install --legacy-peer-deps && npm run build --workspace=@framecut/web`. The `packages/web` build uses `tsc -b` (project references mode) which compiles `packages/shared` first.
 
 ## Key Invariants
 
-- `beatsPerPhoto` is stored as `beats / photos` ratio. The UI shows "X photos per Y beats" — `beatsPerPhoto = Y / X`.
+- `beatsPerPhoto` stored as `beats / photos`. UI shows "X photos per Y beats" — `beatsPerPhoto = Y / X`.
 - Frame counts: `Math.round(startTime * fps)` to `Math.round(endTime * fps)`, min 1 frame.
-- Crop dimensions are height-anchored: output height = render height, width = `height * ratio`, clamped to render width. **Both W and H must be even** — `yuv420p` and H.264 require it. `crop_dimensions()` floors to even via `(n/2)*2`.
-- `totalDurationS` passed to `render_video` = **pure photo play duration only** (sum of all per-photo beat durations). It must NOT include `firstBeatOffsetMs`. The audio offset is handled separately by `-ss <offsetSecs>` on the audio input. Including the offset in `totalDurationS` causes audio to overrun the video by `offsetSecs`.
-- The preview canvas redraws on `[activeIndex, photos, cropRatio, scaleMode, globalTransition, canvasW, canvasH]` changes.
-- `globalTransition = "stack"` in the preview skips `clearRect` so photos accumulate visually.
-- `render_stack` writes intermediate PNGs via `run_ffmpeg_blocking`. PNG commands must specify `-pix_fmt rgb24` — `yuv420p` filter output is not supported by the PNG encoder directly.
+- Crop dimensions height-anchored: output height = render height, width = `height * ratio`, clamped to render width. **Both W and H must be even** — `yuv420p` and H.264 require it.
+- `totalDurationS` = pure photo play duration only (no `firstBeatOffsetMs`). Audio offset applied via `-ss` on the audio input in desktop; audio buffer sliced at `firstBeatOffsetMs/1000` in web render.
+- Preview canvas redraws on `[activeIndex, photos, cropRatio, scaleMode, globalTransition, canvasW, canvasH]`.
+- `globalTransition = "stack"` skips `clearRect` in preview so photos accumulate.
+- Desktop `render_stack` intermediate PNGs must specify `-pix_fmt rgb24` — `yuv420p` not supported by PNG encoder.
