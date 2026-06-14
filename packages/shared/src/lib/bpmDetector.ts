@@ -10,9 +10,9 @@ async function getEssentia(): Promise<unknown> {
       import("essentia.js/dist/essentia-wasm.web.js"),
       import("essentia.js/dist/essentia.js-core.es.js"),
     ]);
-    // Browser WASM module exposes a .ready Promise that resolves to the initialized module
-    const wasmModule = await (EssentiaWASMLoader as unknown as { ready: Promise<unknown> })["ready"];
-    essentiaInstance = new (Essentia as new (wasm: unknown) => unknown)(wasmModule);
+    // ready signals WASM init complete; the loader object itself is the wasm module
+    await EssentiaWASMLoader.ready;
+    essentiaInstance = new (Essentia as new (wasm: unknown) => unknown)(EssentiaWASMLoader);
   }
   return essentiaInstance;
 }
