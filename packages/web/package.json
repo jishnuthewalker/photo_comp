@@ -1,0 +1,16 @@
+{
+  "name": "@framecut/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@framecut/shared": "*",
+    "heic-to": "*",
+    "mediabunny": "*"
+  }
+}
