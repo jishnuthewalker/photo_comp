@@ -6,16 +6,17 @@ export interface IBpmDetector {
 
 let essentiaInstance: InstanceType<typeof Essentia> | null = null;
 
-function getEssentia(): InstanceType<typeof Essentia> {
+async function getEssentia(): Promise<InstanceType<typeof Essentia>> {
   if (!essentiaInstance) {
-    essentiaInstance = new Essentia(EssentiaWASM);
+    const wasmModule = await (EssentiaWASM as unknown as () => Promise<unknown>)();
+    essentiaInstance = new Essentia(wasmModule);
   }
   return essentiaInstance;
 }
 
 export const EssentiaBpmDetector: IBpmDetector = {
   async detect(buffer: AudioBuffer) {
-    const essentia = getEssentia();
+    const essentia = await getEssentia();
     const channelData = buffer.getChannelData(0);
     const inputSignal = essentia.arrayToVector(channelData);
     const result = essentia.RhythmExtractor2013(inputSignal);

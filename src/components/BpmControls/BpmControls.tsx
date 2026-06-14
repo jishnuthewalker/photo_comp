@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useProjectStore } from "../../store/projectStore";
 import { tapTempoMedian } from "../../lib/tapTempo";
+import { isDesktopRuntime, pickFiles } from "../../lib/runtime";
 import type { AudioEngine } from "../../hooks/useAudioEngine";
 
 interface Props {
@@ -39,10 +39,20 @@ export function BpmControls({ audioEngine }: Props) {
   };
 
   const handleImportSong = async () => {
-    const path = await open({ filters: [{ name: "Audio", extensions: ["mp3", "aac", "wav", "flac", "m4a"] }] });
-    if (!path || Array.isArray(path)) return;
-    const durationMs = await audioEngine.load(path);
-    setSong({ path, durationMs });
+    if (isDesktopRuntime()) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const path = await open({ filters: [{ name: "Audio", extensions: ["mp3", "aac", "wav", "flac", "m4a"] }] });
+      if (!path || Array.isArray(path)) return;
+      const durationMs = await audioEngine.load(path);
+      setSong({ path, durationMs });
+    } else {
+      const files = await pickFiles("audio/*");
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      const blobUrl = URL.createObjectURL(file);
+      const durationMs = await audioEngine.load(blobUrl);
+      setSong({ path: blobUrl, durationMs });
+    }
   };
 
   const handleTap = useCallback(() => {

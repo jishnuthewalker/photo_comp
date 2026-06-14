@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from "react";
+import { isDesktopRuntime } from "../lib/runtime";
 
 export interface AudioEngine {
   load: (filePath: string) => Promise<number>; // returns durationMs
@@ -31,9 +32,13 @@ export function useAudioEngine(): AudioEngine {
 
   const load = useCallback(async (filePath: string): Promise<number> => {
     const ctx = getContext();
-    // Tauri asset protocol for local files
-    const { convertFileSrc } = await import("@tauri-apps/api/core");
-    const url = convertFileSrc(filePath);
+    let url: string;
+    if (isDesktopRuntime()) {
+      const { convertFileSrc } = await import("@tauri-apps/api/core");
+      url = convertFileSrc(filePath);
+    } else {
+      url = filePath; // blob URL in browser mode
+    }
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
     const decoded = await ctx.decodeAudioData(arrayBuffer);

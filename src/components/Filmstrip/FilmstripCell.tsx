@@ -8,17 +8,23 @@ interface Props {
   photo: Photo;
   index: number;
   isActive: boolean;
+  isSelected: boolean;
+  dimmedGhost: boolean;
   bpm: number;
   beatsPerPhoto: number;
   cellW: number;
   cellImgH: number;
   onRemove: () => void;
+  onSelect: (index: number, event: React.MouseEvent) => void;
+  onContextMenu: (photoId: string, x: number, y: number) => void;
 }
 
-export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cellW, cellImgH, onRemove }: Props) {
+export function FilmstripCell({ photo, index, isActive, isSelected, dimmedGhost, bpm, beatsPerPhoto, cellW, cellImgH, onRemove, onSelect, onContextMenu }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: photo.id });
   const beats = photo.beatsOverride ?? beatsPerPhoto;
   const [hovered, setHovered] = useState(false);
+
+  const borderColor = isSelected ? "#f0a500" : isActive ? "#5b6eff" : "transparent";
 
   return (
     <div
@@ -26,17 +32,19 @@ export function FilmstripCell({ photo, index, isActive, bpm, beatsPerPhoto, cell
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        opacity: isDragging ? 0.4 : 1,
+        opacity: isDragging ? 0.4 : dimmedGhost ? 0.5 : 1,
         flexShrink: 0,
         width: cellW,
         position: "relative",
         cursor: "grab",
-        border: isActive ? "2px solid #5b6eff" : "2px solid transparent",
+        border: `2px solid ${borderColor}`,
         borderRadius: 4,
         overflow: "visible",
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={(e) => onSelect(index, e)}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(photo.id, e.clientX, e.clientY); }}
       {...attributes}
       {...listeners}
     >

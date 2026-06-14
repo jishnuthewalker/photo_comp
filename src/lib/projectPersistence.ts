@@ -2,6 +2,13 @@ import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import type { Project } from "../store/types";
 
+export function normalizeProject(raw: Partial<Project> & Record<string, unknown>): Project {
+  return {
+    cropRatio: "1:1",
+    ...raw,
+  } as Project;
+}
+
 export async function saveProject(project: Project, filePath?: string): Promise<string> {
   const path = filePath ?? await save({ filters: [{ name: "Project", extensions: ["photocomp"] }] });
   if (!path) throw new Error("cancelled");

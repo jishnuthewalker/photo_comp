@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { isDesktopRuntime } from "./lib/runtime";
 import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
 import { Filmstrip } from "./components/Filmstrip/Filmstrip";
 import { ExportPanel } from "./components/ExportPanel/ExportPanel";
@@ -37,6 +38,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isDesktopRuntime()) return;
     invoke<void>("check_ffmpeg").catch((e: unknown) => setFfmpegError(e instanceof Error ? e.message : String(e)));
   }, []);
 

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { FixedSizeGrid } from "react-window";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { nanoid } from "nanoid";
 import { PhotoGridCell } from "./PhotoGridCell";
 import { useProjectStore } from "../../store/projectStore";
+import { isDesktopRuntime, pickFiles } from "../../lib/runtime";
+import { startBrowserPhotoImport } from "../../lib/browserPhotoImport";
 
 interface ImportedPhoto {
   originalPath: string;
@@ -34,26 +34,66 @@ export function PhotoGrid({ onClose }: Props) {
   const [importError, setImportError] = useState<string | null>(null);
 
   const handleImport = async () => {
-    const result = await open({ multiple: true, filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "heic", "heif"] }] });
-    if (!result) return;
-    const paths = Array.isArray(result) ? result : [result];
+    if (isDesktopRuntime()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const result = await open({ multiple: true, filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "heic", "heif"] }] });
+      if (!result) return;
+      const paths = Array.isArray(result) ? result : [result];
+      setLoading(true);
+      setImportError(null);
+      try {
+        const importResult = await invoke<ImportResult>("import_images", { paths, thumbSize: 240 });
+        if (importResult.heicPaths.length > 0) setHeicPending(importResult.heicPaths);
+        setPhotos(importResult.photos);
+        setSelected(new Set(importResult.photos.map((_, i) => i)));
+      } catch (err) {
+        setImportError(String(err));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Browser mode
+    const files = await pickFiles("image/jpeg,image/png,image/webp", true);
+    if (!files || files.length === 0) return;
     setLoading(true);
     setImportError(null);
-    try {
-      const importResult = await invoke<ImportResult>("import_images", { paths, thumbSize: 240 });
-      if (importResult.heicPaths.length > 0) {
-        setHeicPending(importResult.heicPaths);
+
+    const imported: ImportedPhoto[] = [];
+    startBrowserPhotoImport(
+      files,
+      240,
+      {
+        onBatch(batch) {
+          const newPhotos = batch.photos.map((draft) => ({
+            originalPath: draft.originalPath,
+            thumbPath: URL.createObjectURL(draft.thumbBlob),
+            width: draft.width,
+            height: draft.height,
+          }));
+          setPhotos((prev) => {
+            const updated = [...prev, ...newPhotos];
+            imported.push(...newPhotos);
+            setSelected(new Set(updated.map((_, i) => i)));
+            return updated;
+          });
+        },
+        onDone() {
+          setLoading(false);
+        },
+        onError(err) {
+          setImportError(err);
+          setLoading(false);
+        },
       }
-      setPhotos(importResult.photos);
-      setSelected(new Set(importResult.photos.map((_, i) => i)));
-    } catch (err) {
-      setImportError(String(err));
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleConvertHeic = async () => {
+    if (!isDesktopRuntime()) return;
+    const { invoke } = await import("@tauri-apps/api/core");
     setLoading(true);
     setImportError(null);
     try {

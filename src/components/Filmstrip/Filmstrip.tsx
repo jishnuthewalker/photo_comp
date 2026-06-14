@@ -59,6 +59,7 @@ export function Filmstrip({ activePhotoIndex, onCellClick }: Props) {
   const [duplicateReview, setDuplicateReview] = useState<DuplicateReview | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [duplicateLoading, setDuplicateLoading] = useState(false);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const dragging = useRef(false);
   const startY = useRef(0);
   const startH = useRef(0);
@@ -221,6 +222,8 @@ export function Filmstrip({ activePhotoIndex, onCellClick }: Props) {
       {photos.length > 0 && (
         <div className="filmstrip-bar">
           <SelectionToolbar
+            isSelectionMode={isSelectionMode}
+            setIsSelectionMode={setIsSelectionMode}
             selectedCount={selectedPhotoIds.size}
             analyzeDisabled={selectedPhotoIds.size === 0 || duplicateLoading}
             analyzeLoading={duplicateLoading}
