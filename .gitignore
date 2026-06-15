@@ -40,3 +40,6 @@ src-tauri/gen/
 
 # FFmpeg binaries — large, not needed for web; download separately for desktop
 src-tauri/binaries/
+
+# Playwright MCP artifacts
+.playwright-mcp/
